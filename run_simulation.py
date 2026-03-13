@@ -32,7 +32,10 @@ def run_simulation(
         log_callback=None,
         progress_callback=None,
         synaptic_processor=None,
-        stop_event=None
+        stop_event=None,
+        enable_gate=True,
+        enable_gradient_proxy=True,
+        enable_quantization=False
 ):
     """
     运行神经网络仿真
@@ -107,7 +110,7 @@ def run_simulation(
             log_callback(f"获取数据集信息失败: {e}，默认使用10个类别")
             output_size = 10
             
-        # 创建模型时启用突触数据
+        # 创建模型时根据门控开关决定是否启用突触数据
         input_size = 28 * 28  # 假设输入图像大小为28x28
         # output_size = 10  # 假设10个类别 (Removed hardcoded value)
         model = SNN(
@@ -119,8 +122,8 @@ def run_simulation(
             v_threshold=network_params['v_threshold'],
             v_reset=network_params['v_reset'],
             time_steps=network_params['time_steps'],
-            use_synaptic_data=True,  # 启用突触数据
-            synaptic_data_dim=len(synaptic_data)  # 设置突触数据维度
+            use_synaptic_data=enable_gate,  # 根据门控开关决定
+            synaptic_data_dim=len(synaptic_data) if enable_gate else 0  # 门控关时不需要突触数据维度
         )
         
         # 创建训练配置
@@ -138,8 +141,14 @@ def run_simulation(
         log_callback(f"使用设备: {device}")
         training_manager = TrainingManager(dataset_manager, model, device)
         
-        # 设置突触数据
-        training_manager.set_synaptic_data(synaptic_data, ltd_data=ltd_data)
+        # 设置梯度代理开关
+        training_manager.enable_gradient_proxy = enable_gradient_proxy
+        
+        # 设置突触数据（无论门控是否开启，梯度代理可能仍需要突触数据）
+        if enable_gate or enable_gradient_proxy:
+            training_manager.set_synaptic_data(synaptic_data, ltd_data=ltd_data)
+        else:
+            log_callback("门控和梯度代理均关闭，跳过突触数据加载")
         
         # 开始训练
         log_callback("开始训练...")
@@ -157,6 +166,46 @@ def run_simulation(
 
         if accuracy is not None:
             log_callback(f"训练完成，最终准确率: {accuracy['test_acc'][-1]:.2f}%")
+            
+            quant_result = None
+            
+            # 如果启用了量化映射，在训练完成后执行
+            if enable_quantization:
+                log_callback(f"\n{'='*50}")
+                log_callback(f"正在执行权重→电导量化映射...")
+                try:
+                    # Pass synaptic_data and ltd_data directly if enable_quantization is True
+                    ltp_for_quant = synaptic_data
+                    ltd_for_quant = ltd_data
+                    
+                    quant_result = training_manager.quantize_weights_to_device(
+                        dataset_name=dataset_name,
+                        batch_size=training_params['batch_size'],
+                        log_callback=log_callback,
+                        ltp_curve=ltp_for_quant,
+                        ltd_curve=ltd_for_quant
+                    )
+                    log_callback(f"量化前浮点精度: {quant_result['original_acc']:.2f}%")
+                    log_callback(f"量化后精度:     {quant_result['quantized_acc']:.2f}%")
+                    log_callback(f"精度损失:       {quant_result['acc_drop']:.2f}%")
+                    
+                    # 保存量化后模型的混淆矩阵
+                    if 'confusion_matrix' in quant_result and quant_result['confusion_matrix'] is not None:
+                        quant_cm_path = os.path.join(output_dir, 'confusion_matrix_quantized.png')
+                        plt.figure(figsize=(12, 10))
+                        sns.heatmap(quant_result['confusion_matrix'], annot=True, fmt='.0f', cmap='Oranges')
+                        
+                        actual_n = quant_result.get('num_levels', '未知')
+                        plt.title(f'混淆矩阵 (实测曲线非线性量化后模型 @ 测试集, N={actual_n}级)')
+                        plt.xlabel('预测类别')
+                        plt.ylabel('真实类别')
+                        plt.savefig(quant_cm_path, bbox_inches='tight', dpi=300)
+                        plt.close()
+                        log_callback(f"量化后混淆矩阵已保存为: {quant_cm_path}")
+                    
+                    log_callback(f"{'='*50}")
+                except Exception as e:
+                    log_callback(f"量化映射失败: {str(e)}")
             
             # 获取训练数据并保存可视化结果
             viz_data = training_manager.get_visualization_data()
@@ -236,6 +285,21 @@ def run_simulation(
             csv_save_path = os.path.join(output_dir, 'training_history.csv')
             training_manager.save_training_history_to_csv(csv_save_path)
             log_callback(f"训练历史已保存到: {csv_save_path}")
+            
+            # 追加量化映射结果到CSV
+            if quant_result is not None:
+                try:
+                    with open(csv_save_path, 'a', encoding='utf-8') as f:
+                        f.write("\n")
+                        f.write("Quantization Mapping Results\n")
+                        actual_n = quant_result.get('num_levels', '未知')
+                        f.write(f"Quantization Levels (N),{actual_n}\n")
+                        f.write(f"Original Test Accuracy (%),{quant_result['original_acc']:.2f}\n")
+                        f.write(f"Quantized Test Accuracy (%),{quant_result['quantized_acc']:.2f}\n")
+                        f.write(f"Accuracy Difference (%),{quant_result['acc_drop']:.2f}\n")
+                    log_callback("量化映射结果已成功追加到训练历史 CSV 文件。")
+                except Exception as e:
+                    log_callback(f"追加量化结果到CSV失败: {str(e)}")
             
             return accuracy
         else:

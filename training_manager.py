@@ -158,6 +158,7 @@ class TrainingManager:
         self.synaptic_data = None  # 存储突触数据(LTP)
         self.ltd_data = None      # 存储突触数据(LTD)
         self.synaptic_transformer = None  # 突触数据转换器
+        self.enable_gradient_proxy = True  # 梯度代理开关（消融实验用）
 
     def set_synaptic_data(self, synaptic_data, ltd_data=None, use_pca=False):  # 默认禁用PCA
         """
@@ -381,8 +382,8 @@ class TrainingManager:
             optimizer.zero_grad()
             loss.backward()
             
-            # 应用梯度代理（如果已加载突触数据）
-            if self.synaptic_data is not None:
+            # 应用梯度代理（如果已加载突触数据且开关开启）
+            if self.enable_gradient_proxy and self.synaptic_data is not None:
                 self.apply_device_constraints(self.model)
                 
             optimizer.step()
@@ -551,8 +552,8 @@ class TrainingManager:
                 # 反向传播和优化
                 loss.backward()
                 
-                # 应用梯度代理（如果已加载突触数据）
-                if hasattr(self, 'synaptic_data') and self.synaptic_data is not None:
+                # 应用梯度代理（如果已加载突触数据且开关开启）
+                if self.enable_gradient_proxy and hasattr(self, 'synaptic_data') and self.synaptic_data is not None:
                     self.apply_device_constraints(self.model)
                 
                 self.optimizer.step()
@@ -797,3 +798,150 @@ class TrainingManager:
         }
         self.best_acc = 0
         self.best_model_state = None
+
+    def quantize_weights_to_device(self, num_levels=100, dataset_name='mnist', 
+                                   batch_size=32, log_callback=None,
+                                   ltp_curve=None, ltd_curve=None):
+        """
+        将模型权重量化到器件实际电导态，返回量化前后的测试精度。
+        
+        支持两种量化模式:
+        - 器件感知模式（推荐）: 提供 ltp_curve 时，使用实测 LTP 曲线的归一化值
+          作为非均匀量化码本，真实反映器件电导态的非线性分布
+        - 均匀量化模式（后备）: 未提供 ltp_curve 时，退化为线性等距量化
+        
+        参数:
+            num_levels: 电导级数N（仅均匀量化模式使用；器件感知模式自动由曲线点数决定）
+            dataset_name: 测试数据集名称
+            batch_size: 测试批次大小
+            log_callback: 日志回调
+            ltp_curve: 归一化后的 LTP 曲线数据（numpy array 或 list, 值域 [0,1]）
+            ltd_curve: 归一化后的 LTD 曲线数据（可选，暂未使用）
+        
+        返回:
+            dict: 包含 original_acc, quantized_acc, acc_drop, confusion_matrix 等
+        """
+        import copy
+        import numpy as np
+        
+        def log(msg):
+            if log_callback:
+                log_callback(msg)
+            else:
+                print(msg)
+        
+        # ========== 构建量化码本 ==========
+        if ltp_curve is not None:
+            # ★ 器件感知模式：使用实测 LTP 曲线作为量化码本
+            if isinstance(ltp_curve, torch.Tensor):
+                codebook_np = ltp_curve.cpu().numpy().copy()
+            else:
+                codebook_np = np.array(ltp_curve, dtype=np.float64)
+            
+            # 确保码本已排序且归一化到 [0, 1]
+            codebook_np = np.sort(codebook_np)
+            cb_min, cb_max = codebook_np.min(), codebook_np.max()
+            if cb_max - cb_min > 1e-8:
+                codebook_np = (codebook_np - cb_min) / (cb_max - cb_min)
+            
+            # 去重（某些归一化后的值可能重叠）
+            codebook_np = np.unique(codebook_np)
+            actual_levels = len(codebook_np)
+            codebook_tensor = torch.tensor(codebook_np, dtype=torch.float32)
+            
+            log(f"★ 器件感知量化模式")
+            log(f"  LTP 曲线提供了 {actual_levels} 个可区分电导态")
+            log(f"  G_min(归一化)={codebook_np[0]:.4f}, G_max(归一化)={codebook_np[-1]:.4f}")
+            log(f"  电导态分布: 前5级间距={np.diff(codebook_np[:5]) if actual_levels > 5 else 'N/A'}")
+            log(f"  电导态分布: 后5级间距={np.diff(codebook_np[-5:]) if actual_levels > 5 else 'N/A'}")
+            use_device_aware = True
+        else:
+            # ★ 均匀量化模式（后备方案）
+            codebook_np = np.linspace(0, 1, num_levels)
+            codebook_tensor = torch.tensor(codebook_np, dtype=torch.float32)
+            actual_levels = num_levels
+            
+            log(f"⚠ 均匀量化模式（未提供 LTP 曲线数据）")
+            log(f"  使用 {num_levels} 级线性等距量化")
+            log(f"  注意: 此模式假设电导态均匀分布，不反映器件真实非线性特性")
+            use_device_aware = False
+        
+        # ========== 测试原始精度 ==========
+        criterion = torch.nn.CrossEntropyLoss().to(self.device)
+        test_loader = self.dataset_manager.get_dataloader(
+            dataset_name, train=False, batch_size=batch_size
+        )
+        original_loss, original_acc = self.evaluate(test_loader, criterion)
+        log(f"量化前浮点模型精度: {original_acc:.2f}%")
+        
+        # ========== 保存原始权重 ==========
+        original_state = copy.deepcopy(self.model.state_dict())
+        
+        # ========== 对所有 Linear 层的权重做量化 ==========
+        quantized_count = 0
+        for name, module in self.model.named_modules():
+            if isinstance(module, torch.nn.Linear):
+                w = module.weight.data
+                w_min = w.min()
+                w_max = w.max()
+                w_range = w_max - w_min
+                
+                if w_range < 1e-8:
+                    continue
+                
+                # 归一化到 [0, 1]
+                w_norm = (w - w_min) / w_range
+                
+                # 使用码本进行最近邻量化
+                w_flat = w_norm.reshape(-1)
+                # 对每个权重值，找到码本中最近的电导态
+                cb = codebook_tensor.to(w_flat.device)
+                # 广播计算距离: (num_weights, 1) vs (1, num_codebook_entries)
+                distances = torch.abs(w_flat.unsqueeze(1) - cb.unsqueeze(0))
+                nearest_idx = distances.argmin(dim=1)
+                w_quantized_flat = cb[nearest_idx]
+                w_quantized = w_quantized_flat.reshape(w_norm.shape)
+                
+                # 反映射回原始权重范围
+                w_mapped = w_quantized * w_range + w_min
+                module.weight.data = w_mapped
+                quantized_count += 1
+                
+                # 同样量化偏置（如果有）
+                if module.bias is not None:
+                    b = module.bias.data
+                    b_min = b.min()
+                    b_max = b.max()
+                    b_range = b_max - b_min
+                    if b_range > 1e-8:
+                        b_norm = (b - b_min) / b_range
+                        b_flat = b_norm.reshape(-1)
+                        b_distances = torch.abs(b_flat.unsqueeze(1) - cb.unsqueeze(0))
+                        b_nearest_idx = b_distances.argmin(dim=1)
+                        b_quantized = cb[b_nearest_idx].reshape(b_norm.shape)
+                        module.bias.data = b_quantized * b_range + b_min
+        
+        mode_str = "器件感知非线性" if use_device_aware else "均匀线性"
+        log(f"已将 {quantized_count} 个 Linear 层的权重量化为 {actual_levels} 级（{mode_str}）")
+        
+        # ========== 量化后重新测试精度 ==========
+        quantized_loss, quantized_acc = self.evaluate(test_loader, criterion)
+        
+        # ========== 生成量化后混淆矩阵 ==========
+        log("正在生成量化后模型的混淆矩阵...")
+        quantized_confusion_matrix = self.run_test_inference(dataset_name, batch_size)
+        
+        # ========== 恢复原始权重 ==========
+        self.model.load_state_dict(original_state)
+        
+        acc_drop = original_acc - quantized_acc
+        
+        return {
+            'original_acc': original_acc,
+            'quantized_acc': quantized_acc,
+            'acc_drop': acc_drop,
+            'num_levels': actual_levels,
+            'quantized_layers': quantized_count,
+            'confusion_matrix': quantized_confusion_matrix,
+            'mode': 'device_aware' if use_device_aware else 'uniform'
+        }

@@ -64,6 +64,13 @@ class App:
             'preset_strategy': tk.StringVar(value='high_accuracy')
         }
         
+        # 初始化消融实验开关变量
+        self.ablation_vars = {
+            'enable_gate': tk.BooleanVar(value=True),           # 门控输入调制
+            'enable_gradient_proxy': tk.BooleanVar(value=True), # 梯度代理约束
+            'enable_quantization': tk.BooleanVar(value=False),  # 训练后量化映射
+        }
+        
         # 初始化数据处理器
         from data_processing import SynapticDataProcessor
         self.data_processor = SynapticDataProcessor()
@@ -302,6 +309,9 @@ class App:
         self.synaptic_section = SynapticDataSection(parent, log_callback=self.append_log)
         self.synaptic_section.pack(fill='x', pady=10)
 
+        # 消融实验设置面板
+        self.create_ablation_panel(parent)
+
         # 控制按钮
         control_frame = ttk.Frame(parent)
         control_frame.pack(fill='x', pady=10)
@@ -314,6 +324,37 @@ class App:
         # 进度条
         self.progress = ttk.Progressbar(parent, mode='determinate')
         self.progress.pack(fill='x', pady=5)
+
+    def create_ablation_panel(self, parent):
+        """创建消融实验设置面板"""
+        ablation_frame = ttk.LabelFrame(parent, text="消融实验设置", padding=10)
+        ablation_frame.pack(fill='x', pady=10)
+
+        # 说明文字
+        ttk.Label(ablation_frame, text="控制器件数据参与度，用于对比实验",
+                 foreground='gray').pack(anchor='w', pady=(0, 5))
+
+        # 门控输入开关
+        gate_frame = ttk.Frame(ablation_frame)
+        gate_frame.pack(fill='x', pady=2)
+        ttk.Checkbutton(gate_frame, text="启用门控输入调制（LTP/LTD → 像素增益）",
+                       variable=self.ablation_vars['enable_gate']).pack(side='left')
+
+        # 梯度代理开关
+        grad_frame = ttk.Frame(ablation_frame)
+        grad_frame.pack(fill='x', pady=2)
+        ttk.Checkbutton(grad_frame, text="启用梯度代理约束（LTP/LTD斜率 → 梯度调制）",
+                       variable=self.ablation_vars['enable_gradient_proxy']).pack(side='left')
+
+        # 分隔线
+        ttk.Separator(ablation_frame, orient='horizontal').pack(fill='x', pady=5)
+
+        # 量化映射开关
+        quant_frame = ttk.Frame(ablation_frame)
+        quant_frame.pack(fill='x', pady=2)
+        self.quant_cb = ttk.Checkbutton(quant_frame, text="训练后执行权重→电导量化映射 (仅使用实测曲线非线性电导态)",
+                       variable=self.ablation_vars['enable_quantization'])
+        self.quant_cb.pack(side='left')
 
         # 准确度显示
         self.accuracy_var = StringVar(value="准确度: -")
@@ -337,17 +378,6 @@ class App:
         if "fingerprint" in self.dataset_manager.datasets:
             ttk.Radiobutton(dataset_frame, text="Fingerprint", variable=self.dataset_var,
                          value="fingerprint").pack(side='left', padx=10)
-
-        # 文件选择
-        file_frame = ttk.Frame(data_frame)
-        file_frame.pack(fill='x', pady=5)
-
-        ttk.Label(file_frame, text="电流数据:").pack(side='left', padx=5)
-        self.file_var = StringVar()
-        ttk.Entry(file_frame, textvariable=self.file_var).pack(side='left',
-                                                            fill='x', expand=True, padx=5)
-        ttk.Button(file_frame, text="浏览",
-                command=self.browse_file).pack(side='left')
 
         # 自定义数据集导入
         ttk.Button(data_frame, text="导入自定义数据集",
@@ -378,25 +408,6 @@ class App:
 
         self.images_display_frame = ttk.Frame(self.image_tab)
         self.images_display_frame.pack(fill='both', expand=True, padx=5, pady=5)
-
-    def browse_file(self):
-        # 如果是手动模式，直接返回True
-        if hasattr(self, 'synapse_panel') and self.synapse_panel.use_manual_data:
-            return True
-        
-        file_path = filedialog.askopenfilename(
-            title="选择电流数据文件",
-            filetypes=[
-                ("Excel文件", "*.xlsx *.xls"),
-                ("CSV文件", "*.csv"),
-                ("所有文件", "*.*")
-            ]
-        )
-        if file_path:
-            self.file_var.set(file_path)
-            self.append_log(f"已选择电流数据文件: {file_path}")
-            return True
-        return False
 
     def import_custom_dataset(self):
         """导入自定义数据集"""
@@ -746,18 +757,23 @@ class App:
         label.pack(padx=5, pady=5)
 
     def start_training(self):
-        # 检查是否使用手动数据
+        """开始训练 — 电流数据统一从'突触数据配置'获取，不再弹窗"""
+        # 判断是否需要器件数据 (任意一个消融开关开启都需要真实数据)
+        need_device_data = (self.ablation_vars['enable_gate'].get() or 
+                           self.ablation_vars['enable_gradient_proxy'].get() or
+                           self.ablation_vars['enable_quantization'].get())
+        
         use_manual_data = self.synaptic_section.use_manual_data
-        if not use_manual_data:
-            # 非手动模式才需要选择文件
-            if not self.browse_file():
-                return
-            if not self.file_var.get():
-                messagebox.showerror("错误", "请选择电流数据文件")
+        
+        if need_device_data and not use_manual_data:
+            # 需要器件数据时，检查突触数据配置区是否已选择文件
+            synapse_file = self.synaptic_section.synapse_file_var.get()
+            if not synapse_file:
+                messagebox.showerror("错误", 
+                    "消融实验(门控/梯度代理/量化映射)已启用，\n请先在'突触数据配置'中选择电流数据文件并处理数据！")
                 return
         
         network_params = self.network_section.get_values()
-        # network_params['隐藏层数'] = 1  # 恢复用户设置，不再强制
         training_params = self.training_section.get_values()
         self.stop_event.clear()
 
@@ -771,8 +787,16 @@ class App:
             if isinstance(widget, ttk.Button) and widget['text'] == "开始训练":
                 widget.configure(state='disabled')
 
+        # 获取电流数据文件路径（统一从突触数据配置获取）
+        if use_manual_data:
+            current_data_path = None
+        elif need_device_data:
+            current_data_path = self.synaptic_section.synapse_file_var.get()
+        else:
+            # 门控和梯度代理都关闭，不需要电流数据
+            current_data_path = self.synaptic_section.synapse_file_var.get() or None
+        
         # 启动训练线程
-        current_data_path = self.file_var.get() if not use_manual_data else None
         self.training_thread = threading.Thread(
             target=self.run_training,
             args=(current_data_path, self.dataset_var.get(), network_params, training_params)
@@ -880,6 +904,15 @@ class App:
             if hasattr(self, 'synaptic_section'):
                 synaptic_processor = self.synaptic_section.synaptic_processor
 
+            # 获取消融实验开关状态
+            enable_gate = self.ablation_vars['enable_gate'].get()
+            enable_gradient_proxy = self.ablation_vars['enable_gradient_proxy'].get()
+            enable_quantization = self.ablation_vars['enable_quantization'].get()
+
+            self.append_log(f"[消融] 门控: {'开' if enable_gate else '关'}, "
+                          f"梯度代理: {'开' if enable_gradient_proxy else '关'}, "
+                          f"量化映射: {'开 (实测非线性)' if enable_quantization else '关'}")
+
             # 运行训练循环
             while self.is_training:
                 accuracy = run_simulation(
@@ -891,7 +924,10 @@ class App:
                     log_callback=self.append_log,
                     progress_callback=self.update_progress,
                     synaptic_processor=synaptic_processor,
-                    stop_event=self.stop_event
+                    stop_event=self.stop_event,
+                    enable_gate=enable_gate,
+                    enable_gradient_proxy=enable_gradient_proxy,
+                    enable_quantization=enable_quantization
                 )
 
                 if accuracy is not None:
