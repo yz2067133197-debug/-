@@ -1,0 +1,30 @@
+﻿Epoch,Train Loss,Train Accuracy (%),Test Loss,Test Accuracy (%),Time (seconds)
+1,1.997986,25.59,2.006823,32.81,484.53
+2,1.704048,39.34,1.731052,46.94,470.44
+3,1.444682,47.94,1.590447,46.06,548.75
+4,1.307384,53.94,1.253445,55.31,494.92
+5,1.092512,61.05,0.983205,64.50,531.25
+6,1.165810,61.81,1.507454,56.81,557.80
+7,1.403687,59.17,1.255572,60.56,701.08
+8,1.982636,55.83,1.841112,55.06,957.62
+9,1.414596,62.23,1.592608,58.38,977.41
+10,1.399770,61.55,1.629531,57.56,573.34
+
+Best Model Information
+Best Test Accuracy (%),64.50
+
+Model Parameters
+Hidden Layers,3
+Hidden Neurons,512
+Tau,10.0
+V Threshold,0.5
+V Reset,0.0
+Time Steps,128
+
+Training Time,2026-03-27 17:17:00
+
+Quantization Mapping Results
+Quantization Levels (N),45
+Original Test Accuracy (%),64.50
+Quantized Test Accuracy (%),12.50
+Accuracy Difference (%),52.00

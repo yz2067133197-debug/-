@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://G:/danzi/1200/.idea/1200.iml" filepath="G:/danzi/1200/.idea/1200.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../3800/.idea/3800.iml" filepath="$PROJECT_DIR$/../3800/.idea/3800.iml" />
+      <module fileurl="file://G:/danzi/5500(1)/5500/.idea/5500.iml" filepath="G:/danzi/5500(1)/5500/.idea/5500.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/B234.iml" filepath="$PROJECT_DIR$/.idea/B234.iml" />
+      <module fileurl="file://G:/danzi/QmapCompression-master/.idea/QmapCompression-master.iml" filepath="G:/danzi/QmapCompression-master/.idea/QmapCompression-master.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../pet/.idea/pet.iml" filepath="$PROJECT_DIR$/../pet/.idea/pet.iml" />
+    </modules>
+  </component>
+</project>
