@@ -20,13 +20,14 @@ class LIFSpikeFunction(torch.autograd.Function):
 lif_spike = LIFSpikeFunction.apply
 
 class LIFLayer(nn.Module):
-    def __init__(self, input_dim, output_dim, tau=20.0, dt=1.0, v_threshold=1.0, v_reset=0.0):
+    def __init__(self, input_dim, output_dim, tau=20.0, dt=1.0, v_threshold=1.0, v_reset=0.0, readout=False):
         super(LIFLayer, self).__init__()
         self.fc = nn.Linear(input_dim, output_dim, bias=True)
         self.v_threshold = v_threshold
         self.v_reset = v_reset
         self.tau = tau
         self.dt = dt
+        self.readout = readout
 
     def forward(self, input_spikes):
         # input_spikes: [time_steps, batch, input_dim]
@@ -53,6 +54,10 @@ class LIFLayer(nn.Module):
                 
             dv = (-v/self.tau + I) * self.dt
             v = v + dv
+            if self.readout:
+                outputs.append(v)
+                continue
+
             spikes = lif_spike(v - self.v_threshold)
             v = torch.where(spikes > 0, torch.ones_like(v)*self.v_reset, v)
             outputs.append(spikes)
@@ -70,7 +75,8 @@ class SNN(nn.Module):
                  v_reset=0.0,
                  firing_rate=20.0,
                  use_synaptic_data=False,
-                 synaptic_data_dim=100):
+                 synaptic_data_dim=100,
+                 use_membrane_readout=True):
         super(SNN, self).__init__()
         self.time_steps = time_steps
         self.tau = tau
@@ -81,6 +87,7 @@ class SNN(nn.Module):
         self.output_dim = output_dim
         self.use_synaptic_data = use_synaptic_data
         self.synaptic_data_dim = synaptic_data_dim
+        self.use_membrane_readout = use_membrane_readout
         self.hidden_layers = hidden_layers
         self.hidden_neurons = hidden_neurons
         
@@ -106,8 +113,9 @@ class SNN(nn.Module):
                                  v_threshold=self.v_threshold, v_reset=self.v_reset))
             in_dim = hidden_neurons
         
-        layers.append(LIFLayer(in_dim, output_dim, tau=self.tau, 
-                             v_threshold=self.v_threshold, v_reset=self.v_reset))
+        layers.append(LIFLayer(in_dim, output_dim, tau=self.tau,
+                             v_threshold=self.v_threshold, v_reset=self.v_reset,
+                             readout=self.use_membrane_readout))
         self.layers = nn.ModuleList(layers)
 
     def forward(self, x, synaptic_data=None, ltd_data=None):
@@ -196,7 +204,10 @@ class SNN(nn.Module):
             self.debug_count = 0
         self.debug_count = (self.debug_count + 1) % 1000
                 
-        out_sum = out.sum(dim=0)  # [batch, output_dim]
+        if self.use_membrane_readout:
+            out_sum = out.mean(dim=0)  # [batch, output_dim]
+        else:
+            out_sum = out.sum(dim=0)  # [batch, output_dim]
         
         # DEBUG: Print first sample output counts
         if self.debug_count < 5:

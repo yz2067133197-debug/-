@@ -129,6 +129,9 @@ def run_simulation(
         # 创建模型时根据门控开关决定是否启用突触数据
         input_size = 28 * 28  # 假设输入图像大小为28x28
         # output_size = 10  # 假设10个类别 (Removed hardcoded value)
+        effective_firing_rate = float(network_params.get('firing_rate', max(firing_rate, 300.0)))
+        log_callback(f"输入脉冲发放率: {effective_firing_rate:.2f}")
+
         model = SNN(
             input_dim=input_size,
             output_dim=output_size,
@@ -138,6 +141,7 @@ def run_simulation(
             v_threshold=network_params['v_threshold'],
             v_reset=network_params['v_reset'],
             time_steps=network_params['time_steps'],
+            firing_rate=effective_firing_rate,
             use_synaptic_data=enable_gate,  # 根据门控开关决定
             synaptic_data_dim=len(synaptic_data) if enable_gate else 0  # 门控关时不需要突触数据维度
         )
@@ -300,8 +304,17 @@ def run_simulation(
             training_manager.save_model(model_save_path)
             log_callback(f"模型已保存到: {model_save_path}")
             
-            # 保存训练历史到CSV文件
-            csv_save_path = os.path.join(output_dir, 'training_history.csv')
+            # 决定 CSV 文件的名称
+            history_data = training_manager.get_training_history()
+            final_acc_float = history_data['test_acc'][-1] if history_data['test_acc'] else 0.0
+            
+            if quant_result is not None:
+                final_acc_quant = quant_result['quantized_acc']
+                csv_filename = f"training_history_{final_acc_float:.2f}%-{final_acc_quant:.2f}%.csv"
+            else:
+                csv_filename = f"training_history_{final_acc_float:.2f}%.csv"
+                
+            csv_save_path = os.path.join(output_dir, csv_filename)
             training_manager.save_training_history_to_csv(csv_save_path)
             log_callback(f"训练历史已保存到: {csv_save_path}")
             

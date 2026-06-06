@@ -1,0 +1,1161 @@
+                                    Article                                                                                                 https://doi.org/10.1038/s41467-024-54451-3
+
+
+                                    Accelerated optimization in deep learning
+                                    with a proportional-integral-derivative
+                                    controller
+                                    Received: 26 July 2024                             Song Chen1, Jiaxu Liu1, Pengkai Wang2, Chao Xu                 2,3,4
+                                                                                                                                                              , Shengze Cai       2,3
+                                                                                                                                                                                         &
+                                                                                       Jian Chu2,3
+                                    Accepted: 8 November 2024
+
+
+                                                                                       High-performance optimization algorithms are essential in deep learning.
+                                        Check for updates                              However, understanding the behavior of optimization (i.e., learning process)
+                  1234567890():,;
+1234567890():,;
+
+
+
+
+                                                                                       remains challenging due to the instability and weak interpretability of the
+                                                                                       algorithms. Since gradient-based optimizations can be interpreted as
+                                                                                       continuous-time dynamical systems, applying feedback control to the dyna-
+                                                                                       mical systems that model the optimizers may provide another perspective for
+                                                                                       exploring more robust, accurate and explainable optimization algorithms.
+                                                                                       In this study, we present a framework for optimization called controlled heavy-
+                                                                                       ball optimizer. By employing the proportional-integral-derivative (PID) con-
+                                                                                       troller in the optimizer, we develop a deterministic continuous-time optimizer
+                                                                                       called Proportional-Integral-Derivative Accelerated Optimizer (PIDAO), and
+                                                                                       provide theoretical convergence analysis of PIDAO in unconstrained (non-)
+                                                                                       convex optimizations. As a byproduct, we derive PIDAO-family schemes for
+                                                                                       training deep neural networks by using speciﬁc discretization methods.
+                                                                                       Compared to classical optimizers, PIDAO can be empirically proven a more
+                                                                                       aggressive capacity to explore the loss landscape with lower computational
+                                                                                       costs due to the property of PID controller. Experimental evaluations
+                                                                                       demonstrate that PIDAO can accelerate the convergence and enhance the
+                                                                                       accuracy of deep learning, achieving state-of-the-art performance compared
+                                                                                       with advanced algorithms.
+
+
+                                    Deep learning has gained popularity due to the ability of deep function      optimization problems12,13, i.e., training deep neural networks (NNs),
+                                    approximation in achieving state-of-the-art performance in a large           some of which have over millions or billions of decision variables14,15. In
+                                    variety of engineering and scientiﬁc tasks. A representative example is      general, the train loss landscapes of deep learning models are highly
+                                    learning-based control, where machine learning or deep learning is           degraded16, featuring multiple local and global minima that lead to
+                                    leveraged to serve complex controlled intelligent systems with               varying generalization capability and model performance17,18. In order
+                                    remarkable results surpassing those of traditional methods (see              to obtain suitable minima in the high-dimensional variable space,
+                                    Fig. 1a), e.g., motion planning in robotics1–3, racing4,5, prediction and    gradient-based optimization algorithms19 are generally and success-
+                                    control of complex physical systems6–9, such as fusion plasmas10,11. All     fully employed (Fig. 1a). For example, the gradient descent (GD) and
+                                    these deep learning-based tasks primarily rely on solving large-scale        adaptive moment estimation (Adam20) algorithms are the most
+
+
+                                    1
+                                     School of Mathematical Science, Zhejiang University, Hangzhou, Zhejiang, China. 2Institute of Cyber-Systems and Control, College of Control Science and
+                                    Engineering, Zhejiang University, Hangzhou, Zhejiang, China. 3State Key Laboratory for Industrial Control Technology, Zhejiang University, Hangzhou,
+                                    Zhejiang, China. 4Zhejiang Provincial Engineering Research Center for Intelligent Mobile Unmanned Systems Technology and Huzhou Key Lab for Autono-
+                                    mous Systems, Huzhou Institute of Zhejiang University, Huzhou, Zhejiang, China.     e-mail: cxu@zju.edu.cn; shengze_cai@zju.edu.cn
+
+
+                                    Nature Communications | (2024)15:10263                                                                                                                1
+Article                                                                                                                    https://doi.org/10.1038/s41467-024-54451-3
+
+
+
+
+Fig. 1 | Overview of the closed-loop active control optimizer in solving opti-              the controlled heavy-ball optimizer. d A diagram of the classical PID controller.
+mization problems. a Setup of the connection between machine learning, control,             e Architecture of the proposed optimizer, PIDAO, which consists of three key
+and optimization. In this work, a perspective of active control is introduced into          components from the PID mechanism: (1) a proportional part of the “present”
+optimization to further provide a route for control-oriented learning. b A physical         output y(t) = ∇ f(X); (2) a derivative of output extracting the “tendency” step; and (3)
+interpretation for optimization in a physical perspective. This algorithm can be            an integral of output representing an accumulation of the “past''.
+modeled as a passively forced ball using Newton’s second law. c An illustration of
+
+
+
+
+commonly used optimizers in the deep learning community. To                                 explicit Euler-discretization scheme for the underlying dynamical
+accelerate the training process, physics-inspired mechanisms such as                        system:
+momentum21 can also be incorporated into the optimization algo-
+rithms. There is no doubt that these optimizers contribute mostly to                                                       X€ + aX_ + b∇f ðX Þ = 0,                             ð1Þ
+the success of deep learning. However, understanding the impact of
+optimization on generalization and approximation of deep learning                           where a ≜ 1βpﬃ , X ≜ X(t) is the state at time t in the continuous-time
+                                                                                                          s
+models remains challenging.                                                                 domain, X_ is the derivative of X with respect to t, and ∇ f(X) is the
+                                                                                                                                  pﬃﬃﬃ
+          A possible solution to understanding the optimization (i.e.,                      gradient of f with respect to X. X ðk sÞ approximates xk as s → 0. Here,
+learning process) is to model the gradient-based algorithms or NNs as                       the state X(t) and a are tight coupling. Speciﬁcally, since Eq. (1) is a
+continuous-time dynamical systems22,23, or discrete-time feedback                           second-order system, by using Newton’s second law and serving X€ as
+systems24–27. Here, we use the momentum optimizer as an example. Let                        an acceleration21, Eq. (1) can be modeled as a ball with a unit mass
+us consider a differential objective function f : Ω ! R, x7!f ðxÞ from a                    rolling across the loss landscape f(X), seeking minima passively driven
+feasible set Ω to the real numbers, where x ∈ Ω is the decision variable.                   by a “friction force” aX_ and a “gravity” − b ∇ f(X) (see Fig. 1b).
+The momentum optimizer satisﬁes the iterative scheme                                              Interpreting the gradient-based optimizations as continuous-time
+xk+1 = xk + β(xk − xk−1) − bs ∇ f(xk) with iteration index k, momentum                      dynamical systems allows us to gain insights into the optimization
+coefﬁcients β > 0, a step size of s, and a step-scaling factor of b > 0.                    process. By doing this, the phenomena that are not easily explained
+Upon that, for minx2Ω f ðxÞ, we can obtain the sequence fx k gk ≥ 0 gen-                    can be revealed from a physical perspective by building the connection
+erated by the momentum method and compute f(xk) to approximate                              between the properties of learning frameworks (e.g., universal
+the minimum as k → + ∞. By rewriting the momentum method as                                 approximation and controllability) and the concepts of control (con-
+x k + 1 2x k + x k1
+          pﬃ 2
+                              x x                      x 2x + x         € ðk pﬃﬃsﬃÞ and
+                           pﬃ k pﬃﬃk1  b∇f ðx Þ, with k + 1 pﬃk 2 k1  X
+                      =  1β                                                               vergence and Lyapunov stability)23,27–32. For example, in addition to the
+         ð sÞ               s    s             k              ð sÞ
+                      pﬃﬃﬃ                                                                  aforementioned momentum optimizer, the commonly-used GD and
+x k x k1
+    pﬃ
+        s
+              X_ ðk sÞ, this iterative scheme can be explicitly regarded as an             Adam algorithms have been regarded as continuous-time differential
+
+
+Nature Communications | (2024)15:10263                                                                                                                                            2
+Article                                                                                                           https://doi.org/10.1038/s41467-024-54451-3
+
+
+equations33–35, allowing to reveal the properties of the training                        In this paper, after formulating the optimization problem as a
+dynamics (e.g., generalization and convergence) via Lyapunov                        continuous-time control system (Eq. (2)), we quantitatively introduce
+stability29,36–38 and understand the NNs trained using gradient-based               the PID controller into the design of optimization algorithms to
+algorithms39,40. Such a combination of dynamical systems and control                accelerate the learning process and improve the accuracy. By doing
+theory to understand the optimization and learning process (i.e., control           this, a more straightforward interpretation of optimization is avail-
+for learning) has attracted increasing attention and has been developing            able due to the interpretability of the PID parametric space. We ﬁrst
+rapidly over the past few years41–43. One can introduce open-loop or                employ the PID controller to generate a feedback control input u for
+closed-loop feedback controllers44,45 into the dynamical systems to                 the control heavy-ball optimizer (Fig. 1e). As a result, we propose an
+mitigate various kinds of deep learning pathologies. For example, an                accelerated optimizer called PID accelerated optimizer (PIDAO)
+optimal control-based optimizer is proposed that may avoid some pit-                within the continuous-time framework, formulated by Eq. (3) below.
+falls (e.g., slow convergence on ﬂat loss landscape) of gradient-based              PIDAO is more interpretable due to the greater interpretability of the
+methods24,46,47. Recently, closed-loop control via feedback has been uti-           parametric space of the PID control. We present global and local
+lized to enhance the robustness of the training dynamics of generative              convergence results of PIDAO in unconstrained (strongly) convex
+adversarial networks48 and to automatically detect and rectify errors               and non-convex settings via Lyapunov analysis, respectively, which
+caused by perturbations in NNs49. The state-feedback law has been also              demonstrate
+                                                                                             Rt    its ability to explore the loss landscape aggressively via
+used to mitigate the training unbalance caused by gradient ﬂow50 and                a result t ∇f ðX ðsÞÞds ! 0. This exploration capability contributes to
+                                                                                               0
+convergence rate problems51,52. Following these pioneering works, which             escape saddle points faster and may converge to better minima
+provide promising directions on control for learning, we are interested             during the deep learning training process, such as ﬂat minima
+in answering the question in this paper: can the optimization algorithms            that promote improved generalization16,17. We use speciﬁc dis-
+in deep learning beneﬁt from control theory?                                        cretization methods to derive PIDAO-family schemes for deep
+      To this end, we integrate active control via feedback into the                learning problems and further validate the effectiveness of the
+continuous-time optimization framework (Fig. 1a). First, we recall the              algorithm. Numerical results show that PIDAO inherits the effec-
+momentum optimizer in (Eq. (1)). The ODE (Eq. (1)) can be rewritten as              tiveness of the PID controller in terms of reducing generalization
+a second-order system X€ + aX_ + u = 0 with a control input u = b ∇ f(X).           errors and accelerating training convergence with lower computa-
+Building upon this concept, we propose a framework called controlled                tional costs, and outperforms the state-of-the-art methods in various
+heavy-ball optimizer, which is depicted in Fig. 1c and formulated by the            benchmark cases.
+following ODE:                                                                           We note that our proposal shares a similar idea with PIDopt59, but
+                                                                                    differs from PIDopt in terms of the problem formulation, availability of
+                    X€ + aX_ + uðX , X_ , ∇f ðX Þ, ∇2 f ðX ÞÞ = 0,           ð2Þ    convergence proofs, discrete iterative formulation, and performance
+                                                                                    for a number of test cases. A detailed comparison between PIDopt and
+where ∇2f(X) is the Hessian matrix. From a physical point of view, Eq. (2)          our work is shown in the experiments and in Supplementary Infor-
+is regarded as a mechanical system with active control                              mation (SI) Section I.
+u ≜ uðX , X_ , ∇f ðX Þ, ∇2 f ðX ÞÞ (Fig. 1c). The optimizer with the dynamics (2)
+seeks optima across the loss landscape f(X) driven by the feedback law              Results
+u. Unlike the momentum optimizer (Eq. (1)) that is forced to seek                   We ﬁrst describe the setup of the unconstrained optimization pro-
+optima passively, the optimizer (2) actively employs a feedback con-                blem. Consider the optimization problem minX2Rn f ðX Þ, where f is a
+                                                                                                                                                          ?
+trol u and subsequently uses feedback to improve its optimization                   differentiable and bounded function. We denote that f ≜minX2Rn f
+performance, as depicted in Fig. 1c. For the momentum optimizer (Eq.                and X ? ≜argminX2Rn f ðX Þ. We use ∥ ⋅ ∥ to represent the standard
+(1)), different values of the coefﬁcient a can impact the convergence               Euclidean norm hereafter. Three sets of functions are introduced for
+rate and the generalization capabilities of the trained models53, while it          f(X): S 2μ, L ðRn Þ, F 2L ðRn Þ, and P 2μ ðRn Þ. In particular, (1) f 2 F 2L repre-
+is challenging to determine a suitable a due to the tight coupling                  sents that f(x) is convex and twice-differentiable for any x 2 Rn with
+between a and state X(t). However, by introducing an additional active              a L-Lipschitz continuous gradient. (2) f 2 S 2μ, L ðRn Þ (called
+control u, we can apply various control theories44 to decouple or                   strongly convex function) means that f 2 F 2L and f ðX Þ  μ2 k X  X ? k2
+minimize this dependency, thus improving the interpretability and                   is also convex (X⋆ is the minimizer of f). (3) Lastly, f 2 P 2μ satisﬁes
+stability of the optimizers. Therefore, the Eq. (2) is the basic formation          the twice-differentiability and the Polyak-Łojasiewicz (PL) condition
+                                                                                                                    ?
+of the optimizer proposed in this paper. The next question is how to                2 k ∇f ðX Þk ≥ μðf ðX Þ  f Þ
+                                                                                    1              2
+                                                                                                                       for any x 2 Rn . Moreover, C k ðMÞ
+design the feedback control u.                                                      denotes a space of k-th continuously differentiable functions from
+      Designing the feedback control law is the main issue of control               space M to space M. Here, we deﬁne three parametric sets:
+theory44. One of the most renowned and efﬁcient feedback controllers                (1) S PIDSC and S PIDNC are two sets of hyperparameters (kp, ki, kd, a)
+in the control society is the proportional-integral-derivative (PID)                in the PIDAO, and (2) S EPIDC is a set of hyperparameters
+controller54. The PID input describes a sum of the proportional, deri-              (kp, ki, kd, a, c) in the Enhanced PIDAO. These three sets are deﬁned
+vative, and integral actions of the error, where the error is a distance            in Methods.
+between the output of one physical model and the desired reference,
+as depicted in Fig. 1d. In fact, the PID controller can reduce the error            Problem Setup: formulations of PIDAO
+and enhance the robustness of the systems through the feedback input                Before presenting the basic results of the PIDAO for minX 2Rn f ðX Þ, we
+including the “present” (proportional action), the “past” (integral                 ﬁrst formulate two types of PIDAOs for unconstrained optimization.
+action), and the “tendency” (derivative action)55,56. The idea of PID               Firstly, based on Fig. 1d, one basic control input u can be deﬁned as the
+controller has been used in the design of model architectures57,58 and              sum of the proportional, integral, and derivative terms of the output
+optimizer59. In particular, for the optimizer, through ∇ f(X), the GD and           y(t) = ∇ f(X):
+momentum (Eq. (1)) can be seen as the P-controller which only con-
+                                                                                                                              Z t
+siders the “present”. Wang et al.59 ﬁrst introduced the idea of PID into                                                                           dyðtÞ
+                                                                                                         u = k p yðtÞ + k i         yðsÞds + k d         ,
+the optimizer design, and proposed a discrete-time optimizer (called                                                           t0                   dt
+PIDopt) by adding a derivative term in the momentum optimizer.
+However, PIDopt was proposed through qualitative analysis and                       where kp, ki, and kd are constants. Then, by combining Eq. (2) and the
+therefore lacks a rigorous theoretical framework and interpretability.              above input u, for unconstrained optimization, the standard PIDAO is
+
+
+Nature Communications | (2024)15:10263                                                                                                                               3
+Article                                                                                                                    https://doi.org/10.1038/s41467-024-54451-3
+
+
+described by the dynamical system:                                                            convergence, which will be discussed in more details in Sec. “PIDAO
+                                                                                              has more potentials to escape local minimum” as well. To the best of
+                                             Z t
+                                                                     d∇f ðX Þ                 our knowledge, none of the existing gradient-based dynamics, such as
+           X€ + aX_ + k p ∇f ðX Þ + k i            ∇f ðX Þds + k d            = 0,      ð3Þ
+                                              t0                       dt                     the low-resolution dynamics38,60 and the high-resolution dynamics29,61,
+                                                                                              can produce this result, which also cannot be deduced from the
+where a, kp, ki, and kd are hyperparamters of this optimizer. Without                         inequality ∥ ∇ f(X(t))∥ ≤ O(e−ηt). To further argue that other optimizers
+loss of generality, let us assume that the optimizer starts at t = t0. As                     do not have this result, we show a more detailed description in SI
+discussed in Sec. “Introduction”, a control system has various output                         Section B.1.
+options, such as ∇ f(X) and X_ . Hence, both ∇ f(X) and X_ can be                                  Next, we consider convex objective functions that are more
+integrated into the output y(t), resulting in yðtÞ = cX_ + ∇f ðX Þ. Then, by                  general than strongly convex functions, which appear in machine
+replacing y(t) = ∇ f(X) in (3) with yðtÞ = cX_ + ∇f ðX Þ, we can obtain                       learning problems such as support vector machines and principal
+another PID-form optimizer called the Enhanced PIDAO. This                                    component analysis. We present convergence results of the PIDAO
+formulation is mathematically equivalent to                                                   (3) and the Enhanced PIDAO (4) for the convex objective f 2 F 2L ðRn Þ.
+                                       Z t                                                    Let us ﬁrst focus on the convex optimization problem for the
+                                                                        d∇f ðX Þ              Enhanced PIDAO (4). We provide a global convergence result in
+        X€ + aX_ + k p ∇f ðX Þ + k i         ð∇f ðX Þ + cX_ Þds + k d            = 0:   ð4Þ
+                                        t0                                dt                  Theorem 2, which says that for any ðk p , k i , k d , a, cÞ 2 S EPIDC deﬁned
+                                                                                              in (7) and X(t0), the solution X(t) of the Enhanced PIDAO has
+In addition, as the integral coefﬁcient ki in the PIDAO or the Enhanced                                 Rt                  
+                                                                                                             ∇f ðX ðsÞÞ + cX_ ds = lim
+                                                                                                                                                          ?
+                                                                                              lim   t! + 1                                  f ðX ðtÞÞ  f = 0. Regarding
+                                                                                                                                       t! + 1
+PIDAO equals 0, this degenerated optimizer is called PDAO, which is                                          t0
+
+formulated by                                                                                 the second result in Theorem 2, since a strongly convex function
+                                                                                                                            T
+                                                                                              f 2 S 2μ, L ðRn Þ  F 2L ðRn Þ P 2μ ðRn Þ, one can also obtain the exponen-
+                                                   d∇f ðX Þ
+                      X€ + aX_ + k p ∇f ðX Þ + k d          = 0:                        ð5Þ   tial convergence of the Enhanced PIDAO. Speciﬁcally, if f 2 S 2μ, L ðRn Þ
+                                                     dt
+                                                                                              and ðk p , k i , k d , a, cÞ 2 S EPIDC deﬁned in (7), there exists η > 0
+
+Furthermore, we also consider the possibility of dynamically adjusting                        that      only      depends on hyperparameters              such      that   k
+                                                                                              R                      
+                                                                                                      ∇f ðX ðsÞÞ + cX_ ds k + f ðX ðtÞÞ  f ≤ Oðeηt Þ:
+the parameters kp, ki, kd in order to better balance or capture the                             t                                          ?
+                                                                                               t0
+information contained in the output feedback y(t) = ∇ f(X). More dis-
+cussions about a time-varying PIDAO are presented in SI Section E. For                             To verify Theorem 2, we test the performance of Enhanced PIDAO
+unconstrained optimization minX 2Rn f ðX Þ, one fundamental question                          using the same quadratic loss function as in Fig. 2a. We choose three
+arises regarding Eq. (3)–(5): how to choose hyperparameters kp, ki, kd                        values of c for the optimizer and the exponential convergence results
+and a such that the solutions X(t) of Eq. (3)-(5) can satisfy f ðX ðtÞÞ !                     are shown in Fig. 2b. It is also shown that the difference in c has an
+minX 2Rn f or ∇ f(X(t)) → 0 as t → + ∞. We have provided theoretical                          impact on the convergence rate.
+results for this question in Theorem 1–4 in “Methods”. In the following,                           We note that the Theorem 2 is only valid for Enhanced PIDAO. In
+we demonstrate the main ﬁndings of PIDAO for various optimization                             convex optimization setting, f 2 F 2L ðRn Þ, the convergence analysis of
+problems.                                                                                     the PIDAO
+                                                                                                   Rt      (3) cannot be provided in this framework, i.e., ∇ f(X(t)) → 0
+                                                                                              and t ð ∇f ðX ðsÞÞÞds ! 0 as t → + ∞ cannot be proved together. For-
+                                                                                                     0
+                                                                                              tunately, PIDAO can be approximated by Enhanced PIDAO when c
+Global convergence for convex optimization                                                    approaches zero (see Proposition 1, 2 in SI Section C). According to
+Firstly, the strongly convex objective f 2 S 2μ, L ðRn Þ is considered here.                  such an approximation and Theorem 2, one can use the solution of the
+The strongly convex objective function is the simplest type of objec-                         Enhanced PIDAO to depict the solution of the PIDAO for convex
+tive function, which contains a global minimum and is often used in                           optimization as precise as possible (see details in SI Section D.2). In
+regression problems. We present a global convergence result in The-                           Fig. 2b, we show that the difference between PIDAO and Enhanced
+orem 1 in Methods, namely for any ðk p , k i , k d , aÞ 2 S PIDSC                            PIDAO with the same ðk p , k i , k d , aÞ 2 S EPIDC can be governed by a
+                                                                                              small parameter c. As c decreases, the evolution of PIDAO closely aligns
+deﬁned in (6) and X ðt 0 Þ 2 Rn , there exists a positive constant η
+                                                                                              with that of Enhanced PIDAO.
+such that the solution X(t) of the PIDAO satisﬁes
+                   Rt                                                                              In SI Section E, we further investigate a time-varying optimizer for
+k X ðtÞ  X ? k + k t ∇f ðX ðsÞÞds k ≤ Oðeηt Þ. Since f 2 S 2μ, L ðRn Þ, it                  convex optimization with the objective function f 2 F 2L ðRn Þ, which
+                        0
+
+follows that ∥ ∇ f(X(t))∥≤O(e−ηt) and f(X(t)) − f⋆≤O(e−ηt), which even-                       provides a uniﬁed framework for acceleration and yields an expo-
+tually means that as the hyperparameters of PIDAO are selected in                             nentialconvergence    rate similar to that of 32 or a faster convergence
+                                                                                                         
+S PIDSC , f(X(t)) converges to the global minimum at an                                               1
+                                                                                              rate O t p , p > 2 compared to ref. 38 by regulating the prescribed
+exponential rate.                                                                             function g(t) deﬁned in SI Section E.
+      We consider a vanilla quadratic loss as the strongly convex
+objective f ðX Þ = 0:05X 21 + 5X 22 to verify the performance of the PIDAO,                   Local convergence for nonconvex optimization
+which is demonstrated in Fig. 2a. There exists a line y = kt +b with a                      Now we consider the objective f to be twice-differentiable and boun-
+ﬁnite slope k < 0 and a ﬁnite b such that log f ðX ðtÞÞ  f ? ≤ kt + b,                       ded in Rn (f 2 C2 ðRn Þ). Typically, such an objective function is com-
+which further means that f(X(t)) − f⋆ ≤ O(e−kt). However, in Fig. 2a, we                      mon in neural network training. Additionally, we also consider a class
+observe that compared to momentum and PDAO optimizers, PIDAO                                  of twice-differentiable functions that satisfy the PL condition
+has a signiﬁcant overshoot near X⋆ = [0, 0], which slows down the                             (f 2 P 2μ ðRn Þ) in this section, which says that for μ > 0, the following
+convergence for strongly convex optimization. Such a phenomenon is                                                                                              ?
+                                                                                              holds for the function f 2 P 2μ ðRn Þ: 21 k ∇f ðX Þk2 ≥ μðf ðX Þ  f Þ: We note
+denoted as the offset effect of PIDAO, which will be discussed in Sec.
+“PIDAO has more potentials to escape local minimum” when explain-                             that each stationary point X^ of f 2 P 2 ðRn Þ is the global minima62 since
+                                                                                                                                       μ
+
+                                                                                              0 = 21 k ∇f ðX^ Þk2 ≥ μðf ðX^ Þ  f Þ ≥ 0                   f ðX^ Þ = f
+ing the dynamics of PIDAO.                                                                                                       ?                                    ?
+                                                                                                                                         that implies                   and
+      Apart from the basic exponential convergence of PIDAO including
+                                                                                              X^ 2 argminRn f . An example of non-convex functions satisfying the PL
+∥X(t) − X⋆∥ ≤ O(e−ηt), we remark that the PIDAO achieves an interesting
+                     Rt                                                                                                                 P                
+result, namely k t ∇f ðX ðsÞÞds k obtains an exponential rate of                              condition is considered: f ðX Þ = nk = 1 X 2k + 2sin2 ðX k Þ . PL condition
+                            0
+
+
+
+
+Nature Communications | (2024)15:10263                                                                                                                                     4
+Article                                                                                                                                  https://doi.org/10.1038/s41467-024-54451-3
+
+
+         (a)                                                                                     (b)
+
+
+
+
+         (c)                                         (d)                                         (e)                                             (f)
+
+
+
+
+Fig. 2 | The performance of PIDAO for low-dimensional (non)convex optimi-                         f Evolution trajectories of four PIDAOs with different ki for the same quadratic
+zation. a Evolution trajectories and loss errors of different optimizers with                     objective function f ðXÞ = 2X 21 + 5X 22 with initial point X(0) = [ − 2, − 2], formulated by
+X(0) = [ − 2, 2] for the same ill-condition quadratic loss f ðX Þ = 0:05X 21 + 5X 22 . b PIDAO    (3), where ki,1 > ⋯ > ki,4. The red star in the above ﬁgures denotes the initial point
+can be approximated by the Enhanced PIDAO with a small parameter ci(i = 1, 2, 3),                 X(0). The dynamical systems of optimizers: Nesterov’s accelerated gradient opti-
+where they all start from X(0) = [ − 2, 2]. Here c1 = 1/2, c2 = 1/50, c3 = 1/1000,                mizer (NAG)38, Momentum, PIDAO, Enhanced PIDAO, and PDAO, are summarized in
+respectively. Evolution trajectories of PIDAOs for three test objectives: Six-hump                Table 3. Furthermore, the hyperparameters of the above cases are given in
+camel back function (c), Rastrigin function (d), and Rosenbrock function (e).                     Methods.
+
+
+
+has also received wide attention in the machine learning                                          This approximation is deﬁned as:
+community63–65.
+                                                                                                       Z t                    X
+                                                                                                                              n1                         X
+                                                                                                                                                          m 1                       X
+                                                                                                                                                                                     n1
+     We present a local convergence result in Theorem 3 in Methods.
+                                                                                                             ∇f ðX ðsÞÞds          ∇f ðX ðtk ÞÞδ  0 )          ∇f ðX ðtk ÞÞ +            ∇f ðX ðtk ÞÞ  0:
+For any ðk p , k i , k d , aÞ 2 S PIDNC deﬁned in (8) and X ðt 0 Þ 2 Rn , we have                      t0                    k=0                         k =0                       k=m
+limt! + 1 k ∇f ðX ðtÞÞ k = 0. We veriﬁed the local convergence results                                                                                    |ﬄﬄﬄﬄﬄﬄﬄﬄﬄﬄ{zﬄﬄﬄﬄﬄﬄﬄﬄﬄﬄ}
+                                                                                                                                                             accumulation
+under three non-convex losses, as shown in Fig. 2c–e. In all three
+examples, PIDAO converges to the critical point, but compared to the                              Therefore, in the physical sense, the trajectory X(t) of PIDAO needs to
+other optimizers in Fig. 2c, d, PIDAO even converges to the global                                cover as much of the loss landscape f(X) as possible in order to use the
+                                                                                                                                    P
+minimum.                                                                                          subsequent accumulation kn1          = m ∇f ðX ðt k ÞÞ to compensate the previous
+                                                                                                                    Pm1
+     One surprising result in Theorem 3 is that whether the function                              accumulation k = 0 ∇f ðX ðt k ÞÞ, eventually making the total accumula-
+                                                                                                        P
+f 2 C2 ðRn Þ is convex or non-convex, the convergence of the critical                             tion n1k = 0 ∇f ðX ðt k ÞÞ zero. This phenomenon is referred to as the offset
+points ( ∇ f(X(t)) → 0 asRt → + ∞) can be provided. In addition, since we                         effect, which means that PIDAO would not immediately stop searching
+have limt! + 1 X_ ðtÞ + kai t ∇f ðX ðsÞÞds = 0 in Theorem 3, if ∇ f(X(t)) → 0
+                                 t
+                                                                                                  even in the neighborhood of one local minimum. Instead, it continues
+                                  0
+as t → + ∞ can infer that X(t) converges to a ﬁnite point X⋆ (namely                              to move forward, exploring the loss landscape further. Figure 2f
+limt! + 1 X ðtÞ = X and ∥X⋆∥ < + ∞), which implies limt! + 1 X_ ðtÞ = 0,
+                       ?
+                                                                                                  illustrates such offset effect with different values of ki, where PIDAO
+                                             Rt
+then one can further get limt! + 1 t ∇f ðX ðsÞÞds = 0 for nonconvex                               equips a more aggressive capacity to explore the loss landscape as ki
+                                               0
+optimization.                                                                                     increases. Hence, if ki is appropriately selected, PIDAO may escape
+                                                                                                  local minima or saddle points and converge to a better minimum (even
+PIDAO has more potentials to escape local minimum                                                 the global minimum).
+As analyzed above, PIDAO exhibits remarkable behavior in both con-                                      This property can be further veriﬁed by another two examples
+vex and general settings, either directly
+                                     Rt      or indirectly. It demonstrates                       (Fig. 2c, d), where the objective functions are Six-hump camel back
+the convergence of the integral t ∇f ðX Þds ! 0 as t approaches inﬁ-                              function and Rastrigin function, respectively. Compared with other
+                                       0
+nity. Based on this deduction, we can suspect that PIDAO possesses an                             optimizers, the PIDAO demonstrates the superiority, which can escape
+effective capacity to explore the loss landscape f(X) along with the                              from local optimality and converge to global optimality. As shown in
+solution trajectory of this optimizer. Qualitatively, for a sufﬁciently                           the subﬁgures of Fig. 2c, d, the loss error decreases continuously with
+large t meeting with t  t 0 2 N + and a tagged partition of a closed                             respect to time. Regarding the Rosenbrock function (see Fig. 2e),
+interval [t0, t] on the real line given by t0 ≤ t1 ≤ t2 ≤ ⋯ ≤tn−1≤tn = t with a                   PIDAO goes ahead instead of stopping due to this offset effect, even if
+uniﬁed interval δ = tk − tk−1, the integral can be approximated by a                              it approaches the unique minimum value (see the subﬁgure at the
+Riemann sum of a function f(X(t)) with respect to this tagged partition.                          bottom), which reduces the PIDAO’s convergence rate for a short time.
+
+
+Nature Communications | (2024)15:10263                                                                                                                                                                         5
+Article                                                                                                                            https://doi.org/10.1038/s41467-024-54451-3
+
+
+        (a)                                                                                        (b)
+
+
+
+
+       (c)                                                                                         (d)
+
+
+
+
+Fig. 3 | PIDAO’s ability to escape saddle points and the interpretability of                       X(0) = [ − 6, 5.5] for the Rastrigin loss. b Select ki = kd = 0 but increasing kp. c Select
+PIDAO’s hyperparameters. a Escaping time of different optimizers with the same                     kp = 10 here and kd = 0 but increasing ki. d Select kp = 10 and ki = 14 but increasing kd.
+X(0) = [0.5, 1] for a quadratic function f ðX 1 , X 2 Þ = 21 ðX 21  ϵX 22 Þ. b–d Evolution tra-   The red star in the above ﬁgures denotes the initial point X(0).
+jectories and loss errors of the PIDAO with different hyperparameters (kp, ki, kd) and
+
+
+This example indicates that if the objective f(X) has a global minimum,                            same X(t0), a smaller escaping time away from the saddle point (0, 0)
+the offset effect caused by ki or the integral may lead to unnecessary                             means a faster-escaping rate. We show that the escaping times τ for
+oscillation and decrease the convergence rate. Therefore, PDAO,                                    PIDAO, momentum, and gradient ﬂow are Oð 11 ln δϵ Þ, Oð 11 ln δϵÞ and
+                                                                                                                                                  ϵ3       ϵ2
+namely the PIDAO without the integral term (ki = 0 in Eq. (3)), would be                           O ϵ1 ln δϵ , respectively, which means that PIDAO can help to escape
+more suitable for f(X) that has only one minimum (e.g, Rosenbrock                                  rather ﬂat saddles and accelerate the optimization process. As shown
+function).                                                                                         in Fig. 3a, as ϵ gets smaller (ﬂatter around the saddle point), the
+     The aforementioned results can be concluded by Theorem 4 in                                   escaping times of three optimizers increase, but the escaping time of
+Methods. For the strongly convex function f ðX Þ 2 S 2μ, L ðRn Þ, PDAO may                         PIDAO is the smallest. In other words, PIDAO can escape the saddle
+converge to the minimum faster because there is no additional offset                               point with more possibility and less time. More details are provided in
+effect arose by ki. We show for any ðk p , k d , aÞ 2 S PDSC and X(t0), we                        SI Section B.2.
+have a global convergence result of the solution X(t) of PDAO:
+f(X(t)) − f⋆ ≤ O(e−2mt), where m = minfa, μk d g. The high-resolution NAG
+dynamics proposed by Shi et al.29 is one special case of the PDAO                                  Connection between PIDAO and PID controller
+                           pﬃﬃﬃﬃﬃ     pﬃﬃﬃ      pﬃﬃﬃ
+optimizer if k p = 1 + μs, k d = s, a = 2 μ with s > 0. However,pour           ﬃﬃﬃﬃ                We note that there is a clear connection between the PID controller
+                                                                              2μt
+result provides a faster
+                      pﬃﬃ
+                              convergence    rate f ðX Þ  min  2R n f ≤ Oðe        Þ              and the PIDAO, which is expected to provide interpretability for
+                                           pﬃﬃﬃ               X
+rather than Oðe μt=4 Þ via s = 1=2 μ. In Fig. 2a, we show that the                                PIDAO. In a closed-loop system controlled by a PID controller, the
+solution of PDAO converges to the minimum more rapidly than that of                                proportional item provides a fast response that allows the state to
+the PIDAO, which can be attributed to the absence of the offset effect.                            approach the target quickly. However, there may be a steady-state
+Therefore, if the objective function is convex, PDAO is superior to                                error, which refers to the difference between the desired setpoint and
+PIDAO which may exhibit critical damping during convergence.                                       the actual state of the system. The integral term is utilized to reduce
+     Furthermore, it is shown that PIDAO can escape saddle                                         the steady-state error. The derivative item reduces overshoot and
+points at a faster rate than the classical optimizers. In particular, we use                       oscillation of the state54,59.
+a saddle point problem here to discuss PIDAO’s ability to escape saddle                                  In the context of optimization, we can draw a parallel by con-
+points. Consider a quadratic objective f ðX 1 , X 2 Þ = 21 ðX 21  ϵX 22 Þ with a                  sidering the steady-state error as the distance between the state X(t)
+positive constant ϵ ≪ 1. We deﬁne the escaping time                                               and the global minimum X⋆. (1) kp provides a fast convergence rate for
+τ = inf τ > 0 ∣f ðX 1 ðτÞ, X 2 ðτÞÞ<  δ for optimizers, where δ > 0 and X(τ)                      e(t) = ∇ f(X) to converge to zero, which may lead to a steady-state error
+is the solution of the optimizer. For different optimizers that have the                           since the point X⋆ with ∇ f(X⋆) = 0 may be a local minimum. (2) ki
+
+
+Nature Communications | (2024)15:10263                                                                                                                                                      6
+Article                                                                                                                             https://doi.org/10.1038/s41467-024-54451-3
+
+
+Table 1 | Algorithms of PIDAO via different discretization                                                lr and momentum coefﬁcient (if any) in each algorithm. We perform
+methods                                                                                                   this comparison on two benchmark objectives, quadratic and Rosen-
+                                                                                                          brock, and provide a detailed description of the experimental settings
+ Algorithm’s name        Algorithm’s Scheme (input x0, y0 = kd ∇ f(x0), and z0 = 0)
+                         8                                                                              in Methods. The results are summarized in Fig. 4a–b. We ﬁnd that our
+ PIDAO (SI)              <                 xk + 1  xk = hyk + 1  hkd ∇f    xk                       method provides comparable or even better results than classical
+                           yk + 1  yk =  hayk + 1  h kp  akd ∇f xk  hki zk + 1
+                         :                                                                              algorithms in each case. In the quadratic objective (Fig. 4a), the PDAO,
+                                                  zk + 1  zk = h∇f xk
+                         8                                                                                PIDopt, and Momentum algorithms converge to the minimum faster
+ PIDAO (ST)              <                   xk + 1  xk = hy k  hkd ∇fðxk Þ,
+                           yk + 1  yk =  hayk + 1  hðkp  akd Þ∇fðxk + 1 Þ  hki zk + 1 ,              than the PIDAO (SI) and PIDAO (ST) due to the offset effect of the
+                         :                                                                                latters. Notably, the PDAO, PIDopt, and Momentum algorithms exhibit
+                                           zk + 1  zk = h2 ð∇fðxk Þ + ∇fðxk + 1 ÞÞ,
+                         8                                                                                almost identical convergence rates. Regarding the comparison of
+ PIDAO (AdSI)            >
+                         >                xk + 1  xk = hyk + 1  phk   ﬃﬃﬃﬃd  ∇fðxk Þ,
+                         >
+                         >                                              v^k + ϵ                           adaptive algorithms, although PIDAO (AdSI) has a similar trajectory to
+                         >
+                         <                                 hðkp akd Þ
+                           yk + 1  yk =  hayk + 1  pﬃﬃﬃﬃ             ∇fðxk Þ  phk ﬃﬃﬃﬃi  zk + 1 ,   Adam and AdaHB, the PIDAO (AdSI) holds a faster convergence rate. A
+                                                               v^k + ϵ                 v^k + ϵ
+                         >                                                 
+                         >
+                         >                          z       z    =  h∇f     x   ,                        similar result can be observed in the Rosenbrock case (Fig. 4b), where
+                         >
+                         >                            k+1      k               k
+                         : v                                                               ^k = 1ρ
+                                                                                                 vk
+                              k + 1  v k = ð1  ρ1 Þð∇fðxk + 1 Þ  ∇fðx k + 1 Þ  v k Þ, v         2 :   we ﬁnd that all PIDAO-family algorithms converge to smaller loss
+                                                                                                  1
+
+
+Here, ⊙ represents the Hadmard inner product and h is learning rate.                                      values, indicating that PIDAO can explore the loss landscape more
+                                                                                                          efﬁciently.
+
+reduces the steady-state error. By employing a suitable integral gain ki                                  Example 2: deep learning-based classiﬁcation. Here, we investigate
+in the PIDAO, the exploration capacity of the optimizer can effectively                                   the performance of PIDAO algorithms on high-dimensional optimiza-
+reduce this steady-state error by escaping local minima or saddle                                         tion problems using deep learning classiﬁers as examples. We provide
+points, as discussed earlier. (3) kd reduces overshoot and oscillation of                                 quantitative results for three testing datasets, where each dataset
+the optimization process.                                                                                 employs a different neural network (NNθ) to approximate the classiﬁer.
+      Figure 3b–d shows numerical veriﬁcation of the above interpret-                                     Speciﬁcally, we utilize fully connected NN (FNN), convolutional NN
+ability for (kp, ki, kd) in the PIDAO. The Rastrigin loss has local minima                                (CNN), and residual NN (ResNet) architectures for classifying the
+Ω = fX jX 1 =  5 sinðX 1 Þ, X 2 =  5 sinðX 2 Þg                         and                             MNIST (Fig. 4c), FashionMNIST (Fig. 4d), and CIFAR-10 (Fig. 4e) data-
+minX 2R2 f ðX 1 , X 2 Þ = f ð0, 0Þ = 0. In Fig. 3b, as kp increases, the con-                             sets, respectively. For each case, we compare the performance of our
+vergence speed of PIDAO to Ω = {X∣ ∇ f(X) = 0} becomes faster. How-                                       algorithms with other algorithms. The evaluation metrics include train
+ever, PIDAO ﬁnally converges to a local minimum. To overcome this                                         loss, test loss, train accuracy, and test accuracy. Further details about
+issue, by increasing ki, PIDAO converges to a global minimum, redu-                                       the experimental setup can be found in the “Methods” section.
+cing the steady-state error (Fig. 3c). Moreover, as shown in Fig. 3d, the                                      Given the enhanced exploration capability of PIDAO-family algo-
+overshoot and oscillation of the optimization process are eliminated                                      rithms in the loss landscape, we expect that our algorithms can con-
+by introducing an appropriate parameter kd.                                                               verge to a better minimum with a faster convergence rate. As depicted
+                                                                                                          in Fig. 4c–e, we observe that PIDAO (SI) and PIDAO (ST), with ﬁxed lr,
+PIDAO improves accuracy and efﬁciency in deep learning                                                    consistently outperform the other algorithms in terms of accuracy,
+In the aforementioned low-dimensional cases, PIDAO is implemented                                         loss, and convergence speed in each case. Furthermore, we can con-
+by directly solving the ODE Eq. (3) with respect to the optimization                                      clude that the minimum to which PIDAO (SI) and PIDAO (ST) ultimately
+problems. However, for high-dimensional optimization minX 2Rn f ðX Þ,                                     converge is ﬂatter than that of other algorithms, leading to better
+it is unrealistic to implement the proposed PIDAO method by solving                                       model generalization17. On the other hand, regarding the comparison
+the ODE within a given error tolerance due to the high computa-                                           of adaptive algorithms, the results indicate that PIDAO (AdSI) achieves
+tional cost.                                                                                              faster convergence than Adam and AdaHB without overﬁtting, which is
+      To this end, we apply the semi-implicit Euler and symplectic                                        conﬁrmed by the higher accuracy in testing. In addition to the afore-
+integral methods66 to develop two iterative forms, that can be easily                                     mentioned three cases, we also provide an example where PIDAO is
+integrated with the existing deep learning codes, namely PIDAO (SI)                                       applied to train the PointNet for 3D point cloud classiﬁcation, which is
+and PIDAO (ST); the PDAO scheme is contained in PIDAO (SI) with                                           shown in SI Section H.3, indicating the superior performance of PIDAO
+ki = 0. Moreover, an adaptive algorithm, PIDAO (AdSI), is also proposed                                   as well.
+by using the adaptive learning rate (lr) in PIDAO (SI), inspired by the                                        As mentioned above, a key differentiating feature of our algo-
+implementation of RMSprop. These three main algorithms and the                                            rithms compared with other algorithms is that PIDAO-family algo-
+corresponding discretization methods are reported in Table 1 and                                          rithms (both ﬁxed-lr algorithms and adaptive-lr algorithms) converge
+Methods. The hyperparameter h in these algorithms is the learning                                         to ﬂatter minima θ⋆ that lead to better model generalization. To
+rate (lr). We remark that the gradient term in algorithms can be                                          clearly demonstrate this ﬁnding, we plot the loss landscapes of those
+replaced by the stochastic gradient when using the mini-batch setting.                                    trained models, taking the result of MNIST-FNN as an example. We
+We refer to these algorithms as the PIDAO-family algorithms, which                                        project the training and test loss landscapes of FNN around the
+provide alternative approaches to implement the PIDAO in a compu-                                         parameter θ⋆ into one- and two-dimensional parameter subspaces16;
+tationally efﬁcient manner for high-dimensional optimization. In this                                     see Fig. 5a, b, respectively. More descriptions of the projection are
+work, we pay more attention to the implementation of PIDAO-family                                         contained in Methods. As shown in Fig. 5a, we ﬁnd that in the training
+algorithms. Although the optimization performance such as con-                                            results of PIDAO (SI) and PIDAO (ST), the difference between the
+vergence property cannot be proven theoretically, it is illustrated by                                    corresponding train loss function and test loss function is smaller
+empirical experiments in the following. Moreover, suggestions for                                         than the difference caused by Momentum and PIDopt algorithms.
+selecting hyperparameters (kp, ki, kd, a) are provided in Methods.                                        PIDAO algorithms make the training and testing closer, leading to
+                                                                                                          higher test accuracies (both more than 98.5% on average). Compared
+Example 1: low-dimensional optimization setting. We ﬁrst compare                                          to other adaptive algorithms, similar conclusions can be found for
+our method for low-dimensional optimization objectives f(x) with                                          PIDAO (AdSI). Furthermore, we see that in the result of train loss
+algorithms, namely Momentum, PIDopt, Adam, and Adaptive heavy-                                            shown in Fig. 4c, PIDAO (SI) and PIDAO (ST) present a “loss descent-
+ball (called AdaHB)67 algorithms, in a discrete-time domain. In order to                                  ascent” phenomenon but end up at a minimum θ⋆ with a train loss
+maintain the fairness of the algorithm in comparison, we set the same                                     similar to that of the Momentum algorithm. We assert this
+
+
+Nature Communications | (2024)15:10263                                                                                                                                           7
+Article                                                                                                             https://doi.org/10.1038/s41467-024-54451-3
+
+
+      (a)                                                                              (b)
+
+
+
+
+      (c)
+
+
+
+
+      (d)
+
+
+
+
+      (e)
+
+
+
+
+Fig. 4 | Comparison between the classical algorithms and PIDAO-family algo-            different algorithms on classiﬁcation tasks for MNIST (c), Fashion MNIST (d),
+rithms on various optimization problems. Convergence trajectories and loss             and CIFAR-10 (e), respectively. Four evaluation indexes are demonstrated, includ-
+errors of different algorithms on two objective functions, namely the ill-             ing train loss, test loss, train accuracy, and test accuracy. The shadows near each
+conditioned quadratic loss f ðX Þ = 0:05X 21 + 5X 22 (a) and the Rosenbrock function   curve represent the 90% conﬁdence interval for each data point from 8
+(b). The red star in (a) and (b) denotes the initial point X(0). Performance of        experiments.
+
+
+phenomenon is caused by the effective exploration capacity of                          Example 3: deep learning-based PDE solver. To investigate the
+PIDAO. Speciﬁcally, in Fig. 5b, we project the learning trajectory and                 capacity of PIDAO-family algorithms on more complex cases such as
+train loss landscape of each algorithm into the two-dimensional                        scientiﬁc machine learning, we apply the PIDAO (AdSI) to train NNs for
+parameter subspace. During training, both PIDAO (SI) and PIDAO                         learning partial differential equations (PDEs). The physics-informed
+(ST) pass through basins with lower losses (as shown by the red stars                  NNs (PINNs)68 and Fourier neural operator (FNO)69 are investigated.
+in the 30th epoch). Instead of terminating the training, they both go                  Further details about the experiment are presented in “Methods”.
+ahead and eventually stop at ﬂatter minima (as shown by the blue                            We ﬁrst consider solving a benchmark ﬂuid dynamics problem via
+squares), although the losses are a bit higher than before. This phe-                  PINNs, namely the steady-state ﬂow in a 2D lid-driven cavity, which is
+nomenon is not observed in PIDAO (AdSI) as shown in Fig. 5b, which                     governed by the incompressible Navier-Stokes (NS) equations. The
+may be due to the change of continuous-time dynamics of adaptive                       results are summarized in Fig. 6a, where we can observe that the
+PIDAO algorithm caused by adaptive parameterization. However,                          velocity ﬁeld obtained by the PIDAO (AdSI) is in good agreement with
+compared with Adam and AdaHB, PIDAO (AdSI) still has better                            the reference. Moreover, compared to Adam and other optimizers
+capacity to learn which may be partly inherited from the dynamics                      (Fig. 6a), PIDAO (AdSI) presents a higher accuracy and a faster con-
+of PIDAO.                                                                              vergence rate. Another example of PINNs is solving the 1D Burgers’
+
+
+
+Nature Communications | (2024)15:10263                                                                                                                                  8
+Article                                                                                                                       https://doi.org/10.1038/s41467-024-54451-3
+
+
+       (a)                                                                                   (b)
+
+
+
+
+Fig. 5 | One- and two-dimensional subspace projections of loss landscapes in               the train loss function, and the training trajectory. Here, the formula of each pro-
+MNIST-FNN case. a Results of one-dimensional projection around the minimum θ⋆              jection function is given by f ðα 1 , α2 ; θ? Þ = f ðθ? + α 1 θpd1 + α2 θpd2 Þ with two projection
+with respect to the train loss function, the test loss function, the train accuracy, and   directions θpd1 and θpd2 . The dotted line, red star, and blue square represent the
+the test accuracy. The projection function is formulated as f(α; θ⋆) = f(θ⋆ + αθpd),       projected training trajectory, the projected point at the 30th epoch, and the ended
+where f and θpd are the metric function and the projection direction in the para-          point, respectively. The shadows near each curve represent the 90% conﬁdence
+meter space, respectively. b Two-dimensional projection around θ⋆ with respect to          interval for each data point from 8 experiments.
+
+
+equation. As shown in Fig. 6b, we ﬁnd that the exact and the predicted
+                                                                                           shown in Fig. 7a, b, respectively. As shown in Fig. 7a, in each task, the
+solutions at different time instants t = 0.3, 0.6 are consistent. In addi-
+                                                                                           PIDAO-family algorithms use a little more runtime per epoch com-
+tion, the result obtained by PIDAO (AdSI) is more accurate than those
+                                                                                           pared to other algorithms, but not by much more. The reason is that
+of other algorithms, as depicted by the plot of test errors against
+                                                                                           PIDAO-family algorithms have to store an integral variable zk during
+training epoch in Fig. 6b.
+                                                                                           the iteration, which consumes a certain amount of running time.
+     We also investigate the capacity of the proposed algorithm,
+                                                                                           However, the PIDAO-family of algorithms requires much less runtime
+PIDAO (AdSI), to solve PDEs based on FNO. Here, the 1D Burgers’
+                                                                                           than other algorithms to achieve a certain error due to the acceleration
+equation and the 2D Darcy ﬂow equation are considered, the results of
+                                                                                           of PIDAO. Speciﬁcally, in the comparison of adaptive algorithms for
+which are illustrated in Fig. 6c, d, respectively. From the results, we
+                                                                                           the three tasks, PIDAO (AdSI) requires less runtime; in the comparison
+observe that the models for the two cases trained by PIDAO (AdSI)
+                                                                                           of non-adaptive algorithms, PIDAO (SI) and PIDAO (ST) also require
+both converge to lower L2 losses in testing, which means that PIDAO
+                                                                                           less runtime, because the PIDAO-family algorithms have a faster con-
+(AdSI) is more applicable and produces a better performance. The
+                                                                                           vergence rate so that only fewer epochs are needed to reach the spe-
+discussion here also provides evidence for the assertion that the
+                                                                                           ciﬁed loss.
+PIDAO-family algorithms have more capacity to explore the loss
+landscape than other algorithms.
+                                                                                           Discussion
+     All results of the above deep learning examples are summarized in
+                                                                                           In this paper, we explore the possibility of applying control theory for
+Table 2.
+                                                                                           deep learning. We establish a connection between closed-loop feed-
+                                                                                           back control and optimization algorithms by the controlled heavy-ball
+Computational cost of PIDAO                                                                optimizer. This connection not only motivates us to explain the algo-
+We test the computational cost of PIDAO-family algorithms and the                          rithmic behavior and training dynamics through the lens of
+comparison algorithms in two ways: running time per epoch and the                          continuous-time dynamical systems29,33,38,39,50, but also enables us to
+running time used to reach a certain train loss (e.g., 1e − 3), which are                  develop high-performance closed-loop control optimizers for learning
+
+
+Nature Communications | (2024)15:10263                                                                                                                                                    9
+Article                                                                                                                           https://doi.org/10.1038/s41467-024-54451-3
+
+
+       (a)
+
+
+
+
+        (b)                                                                                                          (c)
+
+
+
+
+                                                                                                                     (d)
+
+
+
+
+Fig. 6 | Solving partial differential equations via neural networks with different                boundary training data, the comparison between the predicted solution and the
+optimizers, including PIDAO (AdSI), Adam, RMSprop, AdamW75, and AdaHB.                            exact solution at t = 0.3, 0.6, and the comparison of test loss between different
+a Results of 2D lid-driven cavity ﬂow based on physics-informed neural networks                   optimizers. Comparison of the training and testing losses among different opti-
+(PINNs). The reference ﬂow, predicted ﬂow obtained by PIDAO (AdSI), and the                       mizers for solving 1D Burgers' equation (c) and 2D Darcy equation (d) based on
+residual ﬂow are plotted. The testing losses against the training epoch based on                  Fourier neural operator network. The shadows near each curve represent the 90%
+four optimizers are compared. b Results of 1D Burgers' equation solved by PINNs,                  conﬁdence interval for each data point from 8 experiments.
+including the prediction u(t, x) obtained by PIDAO (AdSI) along with the initial and
+
+
+
+
+Table 2 | Comparison between benchmark algorithms and PIDAO-family algorithms on various deep learning cases
+
+ Method            MNIST                                                     Fashion MNIST                                          CIFAR-10
+                   Train Loss     Test Loss      Train Acc     Test Acc      Train Loss     Test Loss     Train Acc      Test Acc   Train Loss   Test Loss       Train Acc   Test Acc
+ PIDAO (SI)        0.00186        0.04841        100.00%       98.54%        0.15095        0.20203       94.37%         92.89%     0.00205      0.33433         99.97%      93.1825%
+ PIDAO (ST)        0.00186        0.04831        100.00%       98.59%        0.15286        0.20362       94.25%         92.91%     0.00174      0.33653         99.97%      93.06%
+ PIDAO (AdSI)      0.00439        0.05794        99.92%        98.42%        0.14573        0.20131       94.58%         92.96%     0.04734      0.37667         98.50%      91.51%
+ Momentum          0.00201        0.04931        100.00%       98.47%        0.15704        0.20676       94.19%         92.61%     0.01220      0.39213         99.58%      92.25%
+ Adam              0.00781        0.06894        99.78%        98.20%        0.15615        0.20618       94.20%         92.61%     0.08802      0.34870         96.94%      91.00%
+ PIDopt            0.00508        0.05739        99.90%        98.29%        0.16225        0.20776       93.99%         92.51%     0.01299      0.40980         99.57%      91.79%
+ AdaHB             0.00813        0.07174        99.77%        98.09%        0.16418        0.20324       93.93%         92.70%     0.10775      0.37442         96.23%      90.10%
+ Method           PINNs for 1D Burgers’               PINNs for 2D cavity ﬂow                               FNO for 1D Burgers’ equation         FNO for 2D Darcy equation
+                  equation
+                  Train Loss        Test Error        Train Loss        Test Error        Test Error        Train Loss      Test L2 Error        Train Loss        Test L2 Error
+                                    of u(x, t)                          of u(x, y)        of v(x, y)                        of u(x, t)                             of u(x1, x2)
+ PIDAO (AdSI) 5.8440 × 10−4         2.87%             6.3204 × 10−5 1.30%                 1.76%             3.4827 × 10−4 5.3612 × 10−4          1.1918 × 10−2     5.4192 × 10−3
+ RMSprop          9.2526 × 10−3     12.20%            8.9772 × 10−3     34.17%            68.80%            1.4479 × 10−3   2.0741 × 10−3        1.7722 × 10−2     1.2003 × 10−2
+ Adam             5.5540 × 10−4     6.58%             1.8461 × 10−4     3.07%             4.22%             4.6665 × 10−4   7.1373 × 10−4        1.0586 × 10−2     7.7934 × 10−3
+ AdamW            3.4320 × 10−4 6.23%                 1.4487 × 10−4     2.51%             3.89%             7.0761 × 10−4   1.2057 × 10−3        5.8096 × 10−3 8.2432 × 10−3
+ AdaHB            3.8605 × 10−3     9.43%             3.1194 × 10−3     21.07%            43.73%            9.5934 × 10−4   1.7213 × 10−3        1.9964 × 10−2     1.6065 × 10−2
+The best results are marked in bold. The hyperparameter settings of these optimizers can be found in SI Section H.
+
+
+
+
+Nature Communications | (2024)15:10263                                                                                                                                                10
+Article                                                                                                      https://doi.org/10.1038/s41467-024-54451-3
+
+
+      (a)
+
+
+
+
+      (b)
+
+
+
+
+Fig. 7 | Comparison of computational cost between the classical algorithms and   certain threshold of train loss. The shadows near each curve represent the 90%
+PIDAO-family algorithms on data classiﬁcation problems. a The running time       conﬁdence interval for each data point from 8 experiments.
+used per epoch of optimizers. b The running time of optimizers used to reach a
+
+
+via feedback. In this work, by leveraging the PID control, we propose an         implementation of several PIDAO-family algorithms through dis-
+accelerated optimizer, PIDAO. We investigate the convergence prop-               cretization. In addition, there are also differences in the way how the
+erty and the performance of PIDAO for three basic types of uncon-                optimizers handle the current, past, and tendency information. The
+strained optimization problems: strongly convex, convex, and                     momentum optimizer employs the difference between the current
+bounded non-convex optimization. Most of the characteristics are                 state and the previous state for acceleration, and the adaptive opti-
+described with theoretical analysis. We prove that PIDAO can achieve             mizers (e.g., Adam) construct the ﬁrst and second moments to process
+an exponential convergence in the strongly convex setup and achieve              the past and current gradient information, and further adaptively
+global and local convergence results in the convex and non-convex                update the search direction in the solution space and the learning rate.
+setups, respectively. Our numerical experiments demonstrate that                 On the contrary, PIDAO captures current, past, and tendency from the
+PIDAO exhibits a more aggressive exploration capacity across the loss            gradient information, corresponding to the proportional, integral, and
+landscape. Such a property provides PIDAO the potential to faster                derivative computations in the PID controller. This distinctive
+escape from suboptimal minima and converge towards superior                      approach makes PIDAO more comprehensive and interpretable in
+minima, such as global minima or ﬂat minima. Eventually, to further              those learning and optimization problems. Moreover, compared with
+improve the applicability of PIDAO, we generate the PIDAO-family                 another PID-inspired optimizer, PIDopt59, the motivation of PIDAO is
+algorithms via discretization methods, including two learning rate-              different. We also propose PIDAO with theoretical results in the
+ﬁxed algorithms and one adaptive algorithm, which can be easily                  continuous-time framework. In addition, PIDAO is a more general
+employed in deep learning tasks. As demonstrated in numerous                     framework, and PIDopt can be considered as a typical PD “controller”
+examples (see Figs. 4–7), our algorithms possess a more effective                in PIDAO. We provide more details on the comparison between PIDAO
+exploration competence along the loss landscape with lower compu-                and PIDopt in SI Section I.
+tational costs, resulting in improved accuracy and efﬁciency in deep                   It is worth noting again that PIDAO achieves an interesting result
+                                                                                 Rt
+learning applications (e.g., classiﬁcation and PDE-solver).                       t 0 ∇f ðX ðsÞÞds ! 0 as t → + ∞, which is called offset effect and is a piece
+      Our proposed framework is inspired by a second-order ODE (1)               of evidence that the PIDAO has a stronger exploration capability along
+characterizing the heavy-ball algorithm. However, there are notable              the loss landscape. We set up numerous experiments, including low-
+distinctions between PIDAO and other existing optimizers, which are              dimensional optimization problems and high-dimensional learning
+summarized in Table 3. The primary differentiation lies in the gen-              tasks, to verify the effectiveness of the proposed optimizer. In parti-
+eration of each optimizer. Most optimizers are typically derived by              cular, the results of complex deep-learning tasks indicate that our
+establishing an iteration scheme and then deducing the corresponding             algorithms can outperform state-of-the-art algorithms (e.g., Adam) in
+continuous-time optimizer through limit analysis. However, PIDAO is              terms of accuracy.
+ﬁrst introduced by incorporating a controller into the momentum                        The framework of PIDAO is constructed based on the PID
+optimizer from a physical perspective, followed by the                           mechanism in this study. We believe there is substantial room for
+
+
+Nature Communications | (2024)15:10263                                                                                                                            11
+Article                                                                                                                                  https://doi.org/10.1038/s41467-024-54451-3
+
+                                                                                                                                                     
+Table 3 | Comparison between existing optimizers and PIDAO                                    solutions of the proposed PIDAO (3), X : t 0 , + 1 ! Rn , satisfy k
+in the continuous-time perspective                                                                             Rt
+                                                                                              X ðtÞ  X ? k + k t ∇f ðX ðsÞÞds k ≤ Oðeηt Þ, where η only depends on
+                                                                                                                             0
+Optimizers                 Continuous-time dynamical systems of the optimizers                parameters kp, ki, kd, a, μ.
+GD                         X_ + k ∇fðXÞ = 0
+                                 p                                                                The proof of Theorem 1 is given in SI Section A.1. We also provide a
+Momentum21                 € + aX_ + k ∇fðXÞ = 0
+                           X                                                                  stochastic analysis result of PIDAO in this setting in SI Section A.2. We
+                                      p
+
+NAG38                      € + 3 X_ + k ∇fðXÞ = 0
+                           X
+                                                                                              highlight the following points. (i) One key aspect in the proof of The-
+                               t       p
+                                          pﬃﬃ                                               orem 1 is the construction of a general Lyapunov function V(X)44, as
+High-resolution            € + 3 X_ + 1 + 3 s ∇fðXðtÞÞ + pﬃﬃsﬃ d ∇fðXÞ = 0
+NAG-C29
+                           X   t           2t                  dt                             shown in SI Section A.1. The set S PIDSC ensures that V(X) exponentially
+                                                      pﬃﬃﬃ d                                  decreases along with the solution X(t) of (3), which means that differ-
+High-resolution            € + 2pﬃﬃﬃ
+                           X
+                                           pﬃﬃﬃﬃﬃﬃ
+                                 μX_ + ð1 + μsÞ∇fðXÞ + s dt  ∇fðXÞ = 0
+NAG-SC29                                                                                      ent Lyapunov functions V(X) may require different S PIDSC for con-
+                           8                pﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃ                                   vergence. Hence, the set S PIDSC is conservative. (ii) η is a nonlinear
+Adaptive                   < X_ =  mðtÞ= vðtÞ + ε
+optimizer35                    m_ = hðtÞ∇fðXÞ  rðtÞm                                         function of kp, ki, kd, a, μ. In other words, the convergence rate is
+                           :                                                                  determined in a nonlinear manner by the parameters kp, ki, kd, a, μ. The
+                             v_ = pðtÞ½∇fðXÞ2  qðtÞv
+PDAO                       Eq. (3) with ki = 0                                                parameters leading to an optimal convergence rate for strongly con-
+                                                                                              vex optimization71 would not be discussed in this work. However, in
+PIDAO                      Eq. (3)
+                                                                                              Methods, we summarize how to select kp, ki, kd, a in practical
+Enhanced PIDAO             Eq. (4)
+                                                                                              applications.
+
+future work in applying other existing but suitable control methods to                        Global convergence for convex optimization
+construct controlled physical optimizers (e.g., heavy ball in Sec.                            We propose another set for hyperparameters (kp, ki, kd, a, c):
+“Introduction”), that can efﬁciently solve learning problems. Although                                       8                                            8                       9                   9
+this article focuses on unconstrained optimization issues, in the future,                                    <                                            <k + k 2d L2 k k        = k                 =
+                                                                                                                                                            i
+                                                                                                S EPIDC =       ðk p , k i , k d , aÞ 2 R4+ ∣k p > max           4
+                                                                                                                                                                      , d i + r, a , i + rc = a, 0<c<1 ,
+we could study constrained optimization problems. For example, it is                                         :                                            : a           r         ; r                 ;
+possible to consider physical systems for optimization on manifolds
+                                                                                                                                                                                                       ð7Þ
+and their control problems, such as the control of Euler-Lagrange
+systems on Riemannian manifolds. Regarding PIDAO, there are still                             where r > 0 is related with ki, c, a by the second equality in (7).
+several aspects that require further investigation. The ﬁrst one is the
+optimal convergence rate of PIDAO for strongly convex optimization.                           Theorem 2. For the solution of the proposed Enhanced PIDAO
+Although both the PIDAO family of learning rate-ﬁxed algorithms and                           X : t 0 , + 1 ! Rn , if f 2 F 2L ðRn Þ and ðk p , k i , k d , a, cÞ 2 S EPIDC
+adaptive algorithms outperform other algorithms in the examples                               deﬁned in (7), then the following assertions hold:
+here, we do not yet know why they improve the accuracy of learning. A
+possibility would be to explore the relationship between a key feature                        (1)   For all X ðt 0 Þ 2 Rn , the global convergence can be held, i.e.,
+of the proposed algorithms, namely the offset effect, and the gen-
+                                                                                                                         Z t                     
+eralization ability of deep learning models, drawing upon well-
+                                                                                                                 lim              ∇f ðX ðsÞÞ + cX_ ds = lim f ðX ðtÞÞ  minn f = 0:
+established aspects39,70. Moreover, although the algorithm PIDAO                                             t! + 1        t0                                      t! + 1             X 2R
+(AdSI) achieves great performance in the deep learning examples, the
+continuous-time dynamical system of PIDAO (AdSI) is no longer                                 (2)   Moreover, if the convex objective f obeys the Polyak-Łojasiewicz
+                                                                                                                                                    T
+exactly equivalent to PIDAO due to the incorporation of an adaptive                                 condition with μ > 0, i.e., f 2 F 2L ðRn Þ P 2μ ðRn Þ, there exists
+learning rate. Therefore, deducing a continuous-time system for                                     M, η > 0 such that the exponential convergence rate can be held
+PIDAO (AdSI) would be a promising research direction to gain further                                asR                                                                follows:
+                                                                                                    k t ð∇f ðX ðsÞÞ + cX_ Þds k + ðf ðX ðtÞÞ  minX 2Rn f Þ ≤ Meηt , where M
+                                                                                                        t
+insights into this adaptive algorithm. Last but not least, the concept of
+                                                                                                         0
+PIDAO can be extended to continuous-time stochastic differential                                    and η only depend on parameters kp, ki, kd, a, L, μ.
+equations, as mini-batch algorithms are commonly employed in deep
+learning practice.                                                                                  We provide the proof in SI Section D.1.
+
+Methods                                                                                       Local convergence for non-convex optimization
+Here, we describe more details about the proposed optimizer PIDAO,                            Now we deﬁne a set of ðk p , k i , k d , aÞ 2 R4+ for this class of objective,
+and summarize the discretization methods of PIDAO, the hyperpara-
+meters, testing objective functions, and NN architectures that we used                                                                                                      ki
+                                                                                                             S PIDNC = ðk p , k i , k d , aÞ 2 R4+ ∣k p                       ak d > 0 :           ð8Þ
+in our numerical experiments. We note that in this paper, the                                                                                                               a
+continuous-time optimizers for low-dimensional optimization in Fig. 2
+and the discrete-time algorithms for deep learning in Figs. 4–6, are
+                                                                                              Theorem 3. We consider the parameters ðk p , k i , k d , aÞ 2 S PIDNC
+implemented in the solve_ivp method and the Pytorch package,
+                                                                                              deﬁned in (8) and the bounded objective function f 2 C2 ðRn Þ. Then,
+respectively. Our implementations are all publicly available.
+                                                                                              the solution trajectory of PIDAO (3) with the respective parameters
+                                                                                              (kp, ki, kd, a) starting from any initial condition X(t0) holds
+Global convergence for strongly convex optimization
+We denote one nonempty set of hyperparameters (kp, ki, kd, a):                                                                                                       Z t
+                                                                                                                                           k
+                                                                                                              lim ∇f ðX ðtÞÞ = lim X_ ðtÞ + i                              ∇f ðX ðsÞÞds = 0:
+                                                                                                             t! + 1           t! + 1        a                         t0
+                                                               2               k
+   S PIDSC =     ðk p , k i , k d , aÞ 2 R4+ ∣k p > ak d , μk d + ak d > k p + i   ,   ð6Þ
+                                                                               a
+                                                                                              Moreover, if f 2 P 2μ ðRn Þ, the global convergence of the global minima
+                                                                                              can be obtained, i.e., lim f ðX ðtÞÞ  f ? = 0 for any X ðt 0 Þ 2 Rn .
+Theorem 1. We suppose that f 2 S 2μ, L ðRn Þ. For any ðk p , k i , k d , aÞ 2                                                      t! + 1
+
+S PIDSC deﬁned in (6), there exists a positive constant η such that the                            More details of the proof can be found in SI Section F.
+
+
+Nature Communications | (2024)15:10263                                                                                                                                                                 12
+Article                                                                                                                       https://doi.org/10.1038/s41467-024-54451-3
+
+
+Fast convergence of the PDAO optimizer for strongly convex                               By setting kd = ki = 0, the PIDAO (SI) degrades into the momentum
+optimization                                                                                                                                       2
+                                                                                                                                                 h k
+                                                                                         scheme x k + 1  x k = 1 +1ah ðx k  x k1 Þ  1 + ahp ∇f ðx k Þ. Here, we serve two
+Let us deﬁne a set for (kp, kd, a) in the PDAO:                                                                2
+                                                                                                              h k
+                                                                                         terms 1 +1ah and 1 + ahp as the equivalent momentum and the equivalent
+                              n                                o
+                     S PDSC = ðk p , k d , aÞ 2 R3+ ∣k p >ak d :                  ð9Þ   learning rate, denoted by aeq and lreq respectively, which can produce
+                                                                                         suitable kp, a, h in this view. For example, if we take the equivalent
+                                                                                         momentum and the equivalent learning rate as aeq = 0.9 and lreq = 0.01,
+Theorem 4. We assume that f 2 S 2μ, L ðRn Þ. For any ðk p , k d , aÞ 2 S PDSC           respectively, then we have that h = lreq = 0.01, a = h1 ða1  1Þ = 100
+                                                                                                                                                             9 , and
+                                                                                                                                                                   eq
+deﬁned in (9), the solution X : t 0 , + 1 ! Rn of the PDAO for-                              2
+                                                                                         k p h aeq = lr eq ) k p = a 1lr = 1000
+                                                                                                                             9 . For the remaining two hyperpara-
+mulated by Eq. (3) with ki = 0 satisﬁes f(X) − f⋆ ≤ O(e−2mt),                                                            eq   eq
+                                                                                        meters in the PIDAO (SI), kd and ki, their selection needs to satisfy
+where m = min a, μk d .
+                                                                                         k p > kai + ak d such that k p , k i , k d , a 2 S PIDNC that is deﬁned in (8).
+     We provide the proof in SI Section G.
+                                                                                              Therefore, we summarize the method of selecting hyperpara-
+Discrete-time algorithms of PIDAO                                                        meters: once we determine aeq and lreq, (kp, ki, kd, a) and h could follow
+As shown in Proposition 1 in SI Section C, the following ﬁrst-order ODE                  that
+group is equivalent to the original ODE (Eq. (3)):                                                                                        !
+                                                                                                                        1           1                1          k
+                            8                                                                         h = lr eq , a =                   1 , kp =          , k > i + ak d :
+                            >
+                            > X_ = Y  k d ∇f ðX Þ,                                                                   lr eq        aeq            aeq lr eq p a
+                            <                      
+Equivalent firstorder ODE : Y_ =  aY  k p  ak d ∇f ðX Þ  k i Z ,
+                            >
+                            >                                                            The above parameter selection method is also applicable to the PIDAO
+                            :_
+                              Z = ∇f ðX Þ:                                               (ST) and the PIDAO (AdSI). In practice, we suggest that ki ∈ (0, 10) and
+                                                                                         k d 2 ð0, 1. Further optimization for hyperparameters ki and kd can be
+Then, we can discrete these ODEs to solve the optimization problems.                     based on Bayesian optimization or rich PID tuning methods in classical
+In this paper, three discrete-time PIDAO algorithms are proposed and                     control theory, such as Ziegler-Nichols tuning54. The default aeq and lreq
+implemented in Pytorch, which are summarized in Table 1.                                 for PIDAO (SI) and PIDAO (ST) are suggested by lreq = 10−2, aeq = 0.9,
+                                                                                         while for PIDAO (AdSI) lreq = 10−3, aeq = 0.9 are available in practice.
+PIDAO (SI)
+The semi-implicit Euler method is used to obtain PIDAO (SI), which                       Experiments on low-dimensional optimization via continuous-
+means that on the right side of the above ODE, we use explicit xk, and                   time setting
+implicit yk+1, zk+1 to drive the scheme. As ki = 0, we also produce the                  The continuous-time optimizers investigated in Fig. 2 are summarized
+scheme of PDAO.                                                                          in Table 3. The corresponding ODE for each optimizer is solved using
+                                                                                         the backward differentiation formula (BDF) method. Firstly, we intro-
+PIDAO (ST)                                                                               duce the hyperparameters of PIDAO used in strongly convex cases
+The algorithm PIDAO (ST) is based on the symplectic method and the                       (Fig. 2a, f). In Fig. 2a and b, we use k p = 1000                           100
+                                                                                                                                        9 , k i = 60, k d = 2:5, a = 9 for
+trapezoid formula: in detail, the ﬁrst and second equations in the                       PIDAO and Enhanced PIDAO. In Fig. 2f, for one function f 2 S μ, L ðRn Þ,  2
+
+above ODE are discretized by the symplectic method, while the third                      f − μ∥X − X⋆∥2/2 is a convex function. By choosing suitable k, s, ϵ, one
+equation uses the trapezoid formula.                                                     can construct the following subset of S PIDSC :
+                                                                                                               n       pﬃﬃﬃ      pﬃﬃﬃ        pﬃﬃﬃﬃﬃ                                   o
+PIDAO (AdSI)                                                                             S sub
+                                                                                                                                                                 2
+                                                                                           PID  SC ðk, s, ϵÞ = k d = k s , a = 2 μ, k p = 2k μs + ϵ, 0<k i <ðμk d + ak d  k p Þa  ϵ :
+Based on the PIDAO (SI) scheme, we exploit an adaptive algorithm
+                                                          pﬃﬃﬃﬃﬃ
+PIDAO (AdSI) by introducing the adaptive lr factor v        ^k and the mov-              For example, in Fig. 2f, we derive μ = 4 and select k = 9, s = 0.01, ϵ = 10−4
+ing average into the gradient direction ∇ f(x) and zk. Here, instead of                  that produces k d = 0:9, a = 4, k p = 3:6001, k i, n = 12:9595
+                                                                                                                                                   n . Moreover, we
+using all the past gradients in the updated zk, we use a moving average                  use the same kp, kd, a (if any) in the PDAO, NAG, and Momentum
+of past gradients which is inspired by RMSprop. In particular, we cal-                   optimizers due to the fairness.
+culate the exponential weighted moving average of gradient squared                            Secondly, for non-convex cases (Fig. 2c–e), the hyperparameters
+vk+1 = vk + (1 − ρ1)( ∇ f(xk+1) ⊙ ∇ f(xk+1) − vk) and use a correction of vk,            of PIDAO should obey S PIDNC (8). Here, we consider three objectives
+      ^k = vk 2 , to update kp, ki, kd.
+i.e., v                                                                                  for non-convex optimization, namely (1) Six-hump camel back (SHCB)
+          1ρ
+            1
+                                                                                                                    X4
+                                                                                         f ðX Þ = ð4  2:1X 21 + 31 ÞX 21 + X 1 X 2 + ð4 + 4X 22 ÞX 22 , (2) Rosenbrock (ROS)
+    The pseudo-codes for these three algorithms are provided in
+                                                                                                                   2
+Algorithm 1–3 in SI Section H.                                                           f ðX Þ = 20ðX 2  X 21 Þ + ðX 1  1Þ2 ,             and       (3)      Rastrigin       (RAS)
+                                                                                         f ðX Þ = 20 + X 21 + X 22  10ðcosðX 1 Þ + cosðX 2 ÞÞ. kp, kd, and a are the same in
+Hyperparameters in discretized PIDAO                                                     these cases: 10, 0.3, and 3, respectively, while kis are different, which
+To further improve the practicality of the algorithm, we explore the                     are 28 (for SHCB), 9 (for ROS), and 9 (for RAS), respectively.
+choice of hyperparameters in the above PIDAO-family algorithms
+(shown in Table 1). Recall the PIDAO (SI), we can rewrite the corre-                     Experiments on low-dimensional optimization via discrete-time
+sponding scheme by substituting yk + 1 = xk + 1hxk + k d ∇f ðx k Þ into the             setting
+second equation in this scheme and generate the following scheme:                        We compare the proposed PIDAO-family algorithms with other algo-
+                                                                                         rithms in two cases, namely the ill-conditioned quadratic loss
+                                               2
+                        1                    h kp               hk d                     f ðX Þ = 0:05X 21 + 5X 22 and the Rosenbrock objective f ðX Þ = 20ðX 2 
+     xk + 1  xk =         ðx  x k1 Þ           ∇f ðx k Þ         ð∇f ðx k Þ
+                     1 + ah k               1 + ah             1 + ah                    X 21 Þ2 + ðX 1  1Þ2 . After selecting the equivalent momentum aeq and the
+                                         2
+                                       h ki                                              equivalent learning rate lreq, the h and kp, ki, kd, a in PIDAO-family
+                      ∇f ðx k1 ÞÞ         z :
+                                      1 + ah k + 1                                       algorithms follow the design method of hyperparameters illustrated
+
+
+
+
+Nature Communications | (2024)15:10263                                                                                                                                               13
+Article                                                                                                             https://doi.org/10.1038/s41467-024-54451-3
+
+
+above h = lr eq , a = lr1 ða1  1Þ, k p = a 1lr , k p > kai + ak d : And the learn-   h = lr eq , a = lr1 ða1  1Þ, k p = a 1lr , k p > kai + ak d such that the equiva-
+                           eq   eq               eq   eq                                             eq   eq             eq   eq
+
+ing rate and momentum coefﬁcients α (if any) are also used for Adam                   lent momentum and lr in the PIDAO-family algorithm are equal to lreq
+and Momentum algorithms via h = lreq, α = aeq.                                        and aeq, respectively. To keep the fairness of comparison in
+                                                                                      experiments, the learning rate and the momentum coefﬁcient of
+                                                                                      other algorithms (if any) are also equal to lreq and aeq, respectively.
+Experiments on deep learning-based classiﬁcation
+We compare the PIDAO-family algorithm with other comparison
+algorithms (Adam and Momentum) in different datasets, namely                          Subspace projection of loss landscape
+MNIST, Fashion MNIST, and CIFAR-10. Speciﬁcally, we train a deep                      In the MNIST-FNN case, we project the training and test loss land-
+FNN, a convolution network, and the ResNet1872 on MNIST, Fashion                      scapes (or surfaces) around the trained ﬁnal parameter θ⋆ (or θn) into
+MNIST, and CIFAR-10, respectively. Each network training is per-                      low dimensional parameter subspaces using the visualization
+formed with a supervised loss deﬁned by a cross-entropy formula                       method16. More precisely, after obtaining the one-dimensional pro-
+                                       X                                              jections         of    the      training     and   test   loss      landscape
+                           Hðx, yÞ =         yk log NNθ ðx k Þ,                      f ðα; θ? Þ = f ðθ? + αθpd Þ, α 2 ½1, 1 with a speciﬁc projection direction
+                                       k2S                                            θpd, we calculate the training and test accuracy along the projected
+                                                                                      training and test loss landscapes. Additionally, we denote θk as the
+where xk and yk denote the input and the label of a sample (xk, yk).                  model parameter vector at epoch k during the training. The
+                                                                                                                                                
+NNθ(xk) is the output of NN for xk. This cross-entropy loss is also used              training trajectory of each algorithm θ1 , θ2 ,    , θ? is also projected
+for assessing the performance of network models. More experimental
+                                                                                      into a two-dimensional subspace f ðα1 , α 2 ; θ? Þ = f ðθ? + α 1 θpd 1 + α 2 θpd 2 Þ
+details about networks and hyperparameters of optimization algo-
+                                                                                      that is the projection of the train loss landscape. Here, after
+rithms are presented in SI Section H.
+                                                                                      applying the principal component analysis to the matrix
+                                                                                                                                 
+                                                                                      M = θ1  θ? , θ2  θ? ,    , θn1  θ? and obtaining the ﬁrst second
+Experiments on deep learning-based PDE solver
+We mainly consider solving three benchmark PDEs by deep learning                      principal components, these two principal components become two
+methods, i.e., the 1D Burgers’ equation along with Dirichlet boundary                 projection directions θpd 1 and θpd2 . It is worth mentioning that the ﬁrst
+conditions, the 2D incompressible NS equation on the square                           principal component can be also represented as the projection direc-
+cavity (lid-driven cavity), and the 2D Darcy Flow equation on the                     tion θpd used in the above one-dimensional projection.
+unit box.
+     In the context of PINNs68, the solutions of the Burgers’ equation                Data availability
+and the NS equation are approximated by FNNs, where the loss func-                    All benchmark datasets used in this paper are publicly available,
+tions used for training can be referred to73. In particular, each network             including MNIST, FashionMNIST, CIFAR-10 that can be accessed in
+training is performed with a supervised loss taking the general form                  https://git-disl.github.io/GTDLBench/datasets/, and the PDE dataset
+                                                                                      for FNO that is available in https://drive.google.com/drive/folders/
+                            1 X
+                               Nu                                                     1UnbQh2WWc6knEHbLn-ZaXrKUZhp7pjt-.
+                                             2 1         
+            Ltrain ðθÞ =            u  NNθ x i + R NNθ ðxÞ ,
+                           Nu i = 1 i            λ
+                                                                                      Code availability
+where ui is the
+                measurement data of the initial and boundary condi-                  The source code74 is available at https://github.com/NoulliCHEN/PIDAO.
+tions, NNθ x i is the corresponding DNN-approximated solution, Nu is
+the total number of training data points, and R NNθ ðxÞ is designed to                References
+constrain the outputs of neural network to satisfy a PDE condition                    1.  O’Connell, M. et al. Neural-ﬂy enables rapid learning for agile ﬂight
+controlled by a parameter λ. To quantitatively assess the performance                     in strong winds. Sci. Robot. 7, eabm6597 (2022).
+of network models, we adopt a relative L2 norm as a test metric deﬁned                2. Ichnowski, J., Avigal, Y., Satish, V. & Goldberg, K. Deep learning can
+by                                                                                        accelerate grasp-optimized motion planning. Sci. Robot. 5,
+                                                                                          eabd7710 (2020).
+                                                        2
+                                     1 X
+                                         Nc
+                                              ui  NNθ x i                            3. Loquercio, A. et al. Learning high-speed ﬂight in the wild. Sci.
+                     Ltest ðθÞ =                      2
+                                                            ,                             Robot. 6, eabg5810 (2021).
+                                     Nc i = 1      u       i
+                                                                                      4. Kaufmann, E. et al. Champion-level drone racing using deep rein-
+                                                                                          forcement learning. Nature 620, 982–987 (2023).
+where Nc is the total number of testing data points.                                  5. Wurman, P. R. et al. Outracing champion gran turismo drivers with
+     In addition, we utilize the FNO method69 to solve the Burgers’                       deep reinforcement learning. Nature 602, 223–228 (2022).
+equation and the Darcy Flow equation, where the network archi-                        6. Iwami, R. et al. Controlling chaotic itinerancy in laser dynamics for
+tectures used to approximate the PDE solution can be found in ref. 69.                    reinforcement learning. Sci. Adv. 8, eabn8325 (2022).
+In these FNO experiments, we use a L2 loss to train and test the network              7. Böttcher, L., Antulov-Fantulin, N. & Asikis, T. AI Pontryagin or how
+formulated by                                                                             artiﬁcial neural networks learn to control dynamical systems. Nat.
+                                                                                          Commun. 13, 333 (2022).
+                                     1X N           2                               8. Course, K. & Nair, P. B. State estimation of a physical system with
+                           LðθÞ =          u  NNθ x i  :                                 unknown governing equations. Nature 622, 261–267 (2023).
+                                     N i=1 i
+                                                                                      9. Han, J., Jentzen, A. & Weinan, E. Solving high-dimensional partial
+In SI Section H, we provide more details about the networks and the                       differential equations using deep learning. Proc. Natl. Acad. Sci.
+hyperparameters of optimization algorithms. Here, we train the deep                       USA 115, 8505–8510 (2018).
+learning model with mini-batch algorithms, the mini-batch size                        10. Degrave, J. et al. Magnetic control of tokamak plasmas through
+of which is identical for all algorithms used in each example. We                         deep reinforcement learning. Nature 602, 414–419 (2022).
+also note that with the given lreq and aeq, the hyperparameters of                    11. Kates-Harbeck, J., Svyatkovskiy, A. & Tang, W. Predicting disruptive
+PIDAO-family algorithms used in the above experiments (the classiﬁca-                     instabilities in controlled fusion plasmas through deep learning.
+tion and physical learning problems) follow one common criterion                          Nature 568, 526–531 (2019).
+
+
+Nature Communications | (2024)15:10263                                                                                                                                 14
+Article                                                                                                     https://doi.org/10.1038/s41467-024-54451-3
+
+
+12. Singhal, K. et al. Large language models encode clinical knowl-               34. Zhou, P., Feng, J., Ma, C., Xiong, C. & Hoi, S. C. H. Towards theo-
+    edge. Nature 620, 172–180 (2023).                                                 retically understanding why SGD generalizes better than Adam in
+13. Lake, B. M. & Baroni, M. Human-like systematic generalization                     deep learning. Adv. Neural Inf. Process. Syst. 33, 21285–21296
+    through a meta-learning neural network. Nature 623, 115–121                       (2020).
+    (2023).                                                                       35. Da Silva, A. B. & Gazeau, M. A general system of differential equa-
+14. Bi, K. et al. Accurate medium-range global weather forecasting with               tions to model ﬁrst-order adaptive algorithms. J. Mach. Learn. Res.
+    3D neural networks. Nature 619, 533–538 (2023).                                   21, 5072–5113 (2020).
+15. Liang, J., Xu, C. & Cai, S. Recurrent graph optimal transport for             36. Barrett, D. & Dherin, B. Implicit gradient regularization. In: 9th
+    learning 3D ﬂow motion in particle tracking. Nat. Mach. Intell. 5,                International Conference on Learning Representations (ICLR,
+    505–517 (2023).                                                                   Vienna, Austria, 2020).
+16. Li, H., Xu, Z., Taylor, G., Studer, C. & Goldstein, T. Visualizing the loss   37. Compagnoni, E. M. et al. An SDE for modeling SAM: theory and
+    landscape of neural nets. In: 31st International Conference on                    insights. In Proc. International Conference on Machine Learning
+    Advances in Neural Information Processing Systems (NeurIPS,                       25209–25253 (PMLR, 2023).
+    Montreal, Canada, 2018).                                                      38. Su, W., Boyd, S. & Candës, E. J. A differential equation for modeling
+17. Keskar, N. S., Mudigere, D., Nocedal, J., Smelyanskiy, M. & Tang, P.              Nesterov’s accelerated gradient method: theory and insights. J.
+    T. P. On large-batch training for deep learning: generalization gap               Mach. Learn. Res. 17, 1–43 (2016).
+    and sharp minima. In: 5th International Conference on Learning                39. Jacot, A., Gabriel, F. & Hongler, C. Neural tangent kernel: con-
+    Representations (ICLR, Palais des Congrès Neptune, Toulon,                        vergence and generalization in neural networks. In: 31st Interna-
+    France, 2016).                                                                    tional Conference on Advances in Neural Information Processing
+18. Baldassi, C., Pittorino, F. & Zecchina, R. Shaping the learning land-             Systems (NeurIPS, Montreal, Canada, 2018).
+    scape in neural networks around wide ﬂat minima. Proc. Natl. Acad.            40. Wang, S., Yu, X. & Perdikaris, P. When and why PINNs fail to train: a
+    Sci. USA 117, 161–170 (2020).                                                     neural tangent kernel perspective. J. Comput. Phys. 449,
+19. Bottou, L., Curtis, F. E. & Nocedal, J. Optimization methods for large-           110768 (2022).
+    scale machine learning. SIAM Rev. 60, 223–311 (2018).                         41. Weinan, E. A proposal on machine learning via dynamical systems.
+20. Kingma, D. P. & Ba, J. Adam: a method for stochastic optimization.                Commun. Math. Stat. 1, 1–11 (2017).
+    In: 3rd International Conference on Learning Representations (ICLR,           42. Xue, H., Araujo, A., Hu, B. & Chen, Y. Diffusion-based adversarial
+    San Diega, CA, USA, 2015).                                                        sample generation for improved stealthiness and controllability, In:
+21. Polyak, B. T. Some methods of speeding up the convergence of                      37th International Conference on Advances in Neural Information
+    iteration methods. USSR Comput. Math. Math. Phys. 4, 1–17 (1964).                 Processing Systems (NeurIPS, New Orleans, Louisiana, USA, 2024).
+22. Jordan, M. I. Dynamical, symplectic and stochastic perspectives on            43. Hauswirth, A., He, Z., Bolognani, S., Hug, G. & Dörﬂer, F. Optimi-
+    gradient-based optimization, In Proc. International Congress of                   zation algorithms as robust feedback controllers. Annu. Rev. Con-
+    Mathematicians: Rio de Janeiro 2018 523–549 (World Scien-                         trol 57, 100941 (2024).
+    tiﬁc, 2018).                                                                  44. Krstic, M., Kokotovic, P. V. & Kanellakopoulos, I. Nonlinear and
+23. Tabuada, P. & Gharesifard, B. Universal approximation power of                    Adaptive Control Design (John Wiley & Sons, Inc., 1995).
+    deep residual neural networks through the lens of control. IEEE               45. Sontag, E. D. Mathematical Control Theory: Deterministic Finite
+    Trans. Autom. Control 68, 2715–2728 (2022).                                       Dimensional Systems Vol. 6 (Springer Science & Business
+24. Li, Q. & Hao, S. An optimal control approach to deep learning and                 Media, 2013).
+    applications to discrete-weight neural networks. In Proc. Interna-            46. Ross, I. M. An optimal control theory for nonlinear optimization. J.
+    tional Conference on Machine Learning 2985–2994 (PMLR, 2018).                     Comput. Appl. Math. 354, 39–51 (2019).
+25. Lessard, L., Recht, B. & Packard, A. Analysis and design of optimi-           47. Li, Q., Chen, L., Tai, C. & Weinan, E. Maximum principle based
+    zation algorithms via integral quadratic constraints. SIAM J. Optim.              algorithms for deep learning. J. Mach. Learn. Res. 18, 1–29 (2018).
+    26, 57–95 (2016).                                                             48. Xu, K., Li, C., Zhu, J. & Zhang, B. Understanding and stabilizing
+26. Hu, B. & Lessard, L. Control interpretations for ﬁrst-order optimi-               GANs’ training dynamics using control theory. In Proceedings of the
+    zation methods. In Proc. 2017 American Control Conference (ACC)                   37th International Conference on Machine Learning Vol. 119 of Pro-
+    3114–3119 (IEEE, 2017).                                                           ceedings of Machine Learning Research (eds Daumé, H., Singh, A.)
+27. Fazlyab, M., Ribeiro, A., Morari, M. & Preciado, V. M. Analysis of                10566–10575 (PMLR, 2020).
+    optimization algorithms via integral quadratic constraints: non-              49. Chen, Z., Li, Q. & Zhang, Z. Self-healing robust neural networks via
+    strongly convex problems. SIAM J. Optim. 28, 2654–2689 (2018).                    closed-loop control. J. Mach. Learn. Res. 23, 14329–14382 (2022).
+28. Ruiz-Balet, D. & Zuazua, E. Neural ODE control for classiﬁcation,             50. Wang, S., Teng, Y. & Perdikaris, P. Understanding and mitigating
+    approximation and transport. SIAM Rev. 65, 735–773 (2023).                        gradient ﬂow pathologies in physics-informed neural networks.
+29. Shi, B., Du, S. S., Jordan, M. I. & Su, W. J., Understanding the                  SIAM J. Sci. Comput. 43, A3055–A3081 (2021).
+    acceleration phenomenon via high-resolution differential equa-                51. Kolarijani, A. S., Esfahani, P. M. & Keviczky, T. Continuous-time
+    tions, Math. Program. 195, 79–148 (2021).                                         accelerated methods via a hybrid control lens. IEEE Trans. Autom.
+30. Wilson, A. C., Recht, B. & Jordan, M. I. A Lyapunov analysis of                   Control 65, 3425–3440 (2019).
+    accelerated methods in optimization. J. Mach. Learn. Res. 22,                 52. Vaquero, M. & Cortés, J. Convergence-rate-matching discretization
+    5040–5073 (2021).                                                                 of accelerated optimization ﬂows through opportunistic state-
+31. Yang, L. et al. The physical systems behind optimization algorithms.              triggered control. In: 32nd International Conference on Advances in
+    In: 31st International Conference on Advances in Neural Information               Neural Information Processing Systems (NeurIPS, Vancouver,
+    Processing Systems (NeurIPS, Montreal, Canada, 2018).                             Canada, 2019).
+32. Wibisono, A., Wilson, A. C. & Jordan, M. I. A variational perspective         53. Ghosh, A., Lyu, H., Zhang, X. & Wang, R. Implicit regularization in
+    on accelerated methods in optimization. Proc. Natl. Acad. Sci. USA                heavy-ball momentum accelerated stochastic gradient descent. In:
+    113, E7351–E7358 (2016).                                                          11th International Conference on Learning Representations (ICLR,
+33. Li, Q., Tai, C. & Weinan, E. Stochastic modiﬁed equations and                     Kigali, Rwanda, 2023).
+    adaptive stochastic gradient algorithms. In Proc. International               54. Astrom, K. J. PID Controllers: Theory, Design, and Tuning (The
+    Conference on Machine Learning 2101–2110 (PMLR, 2017).                            Instrumentation, Systems and Automation Society, 1995).
+
+
+Nature Communications | (2024)15:10263                                                                                                                  15
+Article                                                                                                    https://doi.org/10.1038/s41467-024-54451-3
+
+
+55. Filo, M., Kumar, S. & Khammash, M. A hierarchy of biomolecular              75. Loshchilov, I. & Hutter, F. Decoupled weight decay regularization. In
+    proportional-integral-derivative feedback controllers for robust                7th Proc. International Conference on Learning Representations
+    perfect adaptation and dynamic performance. Nat. Commun. 13,                    (ICLR, New Orleans, Louisiana, United States, 2019).
+    2119 (2022).
+56. Zhao, C. & Guo, L. Towards a theoretical foundation of PID control          Acknowledgements
+    for uncertain nonlinear systems. Automatica 142, 110360 (2022).             C.X., S. Cai., and S. Chen would like to acknowledge the support by the
+57. Ma, R., Zhang, B., Zhou, Y., Li, Z. & Lei, F. PID controller-guided         National Natural Science Foundation of China (No. 61973270, No.
+    attention neural network learning for fast and effective real photo-        62301486, and No. 12171431). C.X. gratefully acknowledges the ﬁnancial
+    graphs denoising. IEEE Trans. Neural Netw. Learn. Syst. 33,                 support provided by the Zhejiang Province High-Level Talent Special
+    3010–3023 (2021).                                                           Support Plan for Scientiﬁc and Technological Innovation Leading
+58. Xu, J., Xiong, Z. & Bhattacharyya, S P. PIDNet: a real-time semantic        Talents (No. 2023R5217). S. Cai acknowledges the support by Qizhen
+    segmentation network inspired by PID controllers. In Proc. IEEE/CVF         Scholar Foundation of Zhejiang University Education Foundation and the
+    Conference on Computer Vision and Pattern Recognition                       State Key Laboratory of Industrial Control Technology (Grant No.
+    19529–19539 (IEEE, 2023).                                                   ICT2024A05). S.Chen acknowledges the scholarship of Doctoral Aca-
+59. Wang, H. et al. PID controller-based stochastic optimization accel-         demic Star Program of Zhejiang University.
+    eration for deep neural networks. IEEE Trans. Neural Netw. Learn.
+    Syst. 31, 5079–5091 (2020).                                                 Author contributions
+60. Attouch, H., Chbani, Z., Peypouquet, J. & Redont, P. Fast con-              S. Chen performed theoretical analysis of the methods and wrote the
+    vergence of inertial dynamics and algorithms with asymptotic                original manuscript, assisted by J.L. S.Chen, P.W., C.X., and S. Cai
+    vanishing viscosity. Math. Program. 168, 123–175 (2018).                    implemented the algorithms, performed the experiments, and analyzed
+61. Attouch, H., Chbani, Z., Fadili, J. & Riahi, H. First-order optimization    the results. S.Chen, J.L., P.W., C.X., S. Cai. and J.C. contributed to dis-
+    algorithms via inertial systems with Hessian driven damping. Math.          cussing the results, writing and reviewing the paper. C.X. and S. Cai
+    Program. 193, 113–155 (2022).                                               supervised research.
+62. Karimi, H., Nutini, J. & Schmidt, M. Linear convergence of gradient
+    and proximal-gradient methods under the Polyak-Łojasiewicz con-             Competing interests
+    dition. In Proc. European Conference on Machine Learning and                The authors declare no competing interests.
+    Knowledge Discovery in Databases, Vol. 9851, 795–811
+    (ECML, 2016).                                                               Additional information
+63. Fazel, M., Ge, R., Kakade, S. & Mesbahi, M. Global convergence of           Supplementary information The online version contains
+    policy gradient methods for the linear quadratic regulator. In Proc.        supplementary material available at
+    International Conference on Machine Learning 1467–1476                      https://doi.org/10.1038/s41467-024-54451-3.
+    (PMLR, 2018).
+64. Liu, C., Zhu, L. & Belkin, M. Loss landscapes and optimization in           Correspondence and requests for materials should be addressed to
+    over-parameterized non-linear systems and neural networks. Appl.            Chao Xu or Shengze Cai.
+    Comput. Harmon. Anal. 59, 85–116 (2022).
+65. Li, Y., Ma, T., Zhang, H. Algorithmic regularization in over-               Peer review information Nature Communications thanks the anon-
+    parameterized matrix sensing and neural networks with quadratic             ymous reviewers for their contribution to the peer review of this work. A
+    activations. In Proc. Conference On Learning Theory 2–47                    peer review ﬁle is available.
+    (PMLR, 2018).
+66. Hairer, E., Hochbruck, M., Iserles, A. & Lubich, C. Geometric               Reprints and permissions information is available at
+    numerical integration. Oberwolfach Rep. 3, 805–882 (2006).                  http://www.nature.com/reprints
+67. Saab Jr, S., Phoha, S., Zhu, M. & Ray, A. An adaptive polyak heavy-
+    ball method. Mach. Learn. 111, 3245–3277 (2022).                            Publisher’s note Springer Nature remains neutral with regard to jur-
+68. Karniadakis, G. E. et al. Physics-informed machine learning. Nat.           isdictional claims in published maps and institutional afﬁliations.
+    Rev. Phys. 3, 422–440 (2021).
+69. Li, Z. et al. Fourier neural operator for parametric partial differential   Open Access This article is licensed under a Creative Commons
+    equations. In: 9th International Conference on Learning Repre-              Attribution-NonCommercial-NoDerivatives 4.0 International License,
+    sentations (ICLR, Vienna, Austria, 2020).                                   which permits any non-commercial use, sharing, distribution and
+70. Wu, L., Ma, C. & Weinan, E. How SGD selects the global minima in            reproduction in any medium or format, as long as you give appropriate
+    over-parameterized learning: a dynamical stability perspective. In:         credit to the original author(s) and the source, provide a link to the
+    31st International Conference on Advances in Neural Information             Creative Commons licence, and indicate if you modiﬁed the licensed
+    Processing Systems (NeurIPS, Montreal, Canada, 2018).                       material. You do not have permission under this licence to share adapted
+71. Nesterov, Y. Introductory Lectures on Convex Optimization: a Basic          material derived from this article or parts of it. The images or other third
+    Course Vol. 87 (Springer Science & Business Media, 2003).                   party material in this article are included in the article’s Creative
+72. He, K., Zhang, X., Ren, S. & Sun, J. Deep residual learning for image       Commons licence, unless indicated otherwise in a credit line to the
+    recognition. In Proc. IEEE Conference on Computer Vision and Pat-           material. If material is not included in the article’s Creative Commons
+    tern Recognition 770–778 (IEEE, 2016).                                      licence and your intended use is not permitted by statutory regulation or
+73. Raissi, M., Perdikaris, P. & Karniadakis, G. E. Physics-informed neural     exceeds the permitted use, you will need to obtain permission directly
+    networks: a deep learning framework for solving forward and                 from the copyright holder. To view a copy of this licence, visit http://
+    inverse problems involving nonlinear partial differential equations.        creativecommons.org/licenses/by-nc-nd/4.0/.
+    J. Comput. Phys. 378, 686–707 (2019).
+74. Chen, S. et al. Accelerated optimization in deep learning with a            © The Author(s) 2024
+    proportional-integral-derivative controller. PIDAO, https://doi.org/
+    10.5281/zenodo.13939583 (2024).
+
+
+
+Nature Communications | (2024)15:10263                                                                                                                   16
+

@@ -308,8 +308,9 @@ class SynapticDataSection(ttk.LabelFrame):
             filename = "normalized_synaptic_data.csv"
             save_path = os.path.join(output_dir, filename)
 
-            # 准备数据：只有 ltp 和 ltd 两列
+            # 准备数据：包含归一化脉冲数、ltp 和 ltd
             data = {
+                'normalized_pulse': self.synaptic_processor.normalized_data['x'],
                 'ltp': self.synaptic_processor.normalized_data['ltp'],
                 'ltd': self.synaptic_processor.normalized_data['ltd']
             }

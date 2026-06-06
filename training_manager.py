@@ -14,35 +14,26 @@ from scipy.interpolate import interp1d
 class FOPIOptimizer(Optimizer):
     def __init__(self, params, lr=required, lambda_param=1, weight_decay=0, 
                  k_p=1, k_i=1, alpha=1, N=10):
-        """        
-        参数:
-        - lambda_param: λ参数
-        - k_p, k_i: PI系数
-        - alpha: 分数阶积分阶数
-        - N: 记忆长度
-        """
         if lr is not required and lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
             
         defaults = dict(lr=lr, lambda_param=lambda_param, weight_decay=weight_decay,
                        k_p=k_p, k_i=k_i, alpha=alpha, N=N)
         super(FOPIOptimizer, self).__init__(params, defaults)
-        
-        # 预计算权重系数
         self._precompute_weights()
 
     def _precompute_weights(self):
-        """预计算分数阶权重系数"""
         for group in self.param_groups:
             alpha = group['alpha']
             N = group['N']
-
             gammaI = []
             for j in range(1, N + 1):
                 z = ((-1) ** (j + 1)) * math.gamma(alpha + 1) / (math.gamma(j + 1) * math.gamma(alpha - j + 1))
                 gammaI.append(z)
             group['gammaI'] = gammaI
-            
+            weight_sum = sum(abs(w) for w in gammaI) + 1e-10
+            group['gammaI_norm'] = [w / weight_sum for w in gammaI]
+            group['gammaI_sum'] = weight_sum
 
     def step(self, closure=None):
         loss = None
@@ -54,8 +45,10 @@ class FOPIOptimizer(Optimizer):
             lambda_param = group['lambda_param']
             weight_decay = group['weight_decay']
             k_p = group['k_p']
-            k_i = group['k_i'] 
+            k_i = group['k_i']
             gammaI = group['gammaI']
+            gammaI_norm = group['gammaI_norm']
+            gammaI_sum = group['gammaI_sum']
             N = group['N']
 
             for p in group['params']:
@@ -64,59 +57,39 @@ class FOPIOptimizer(Optimizer):
                     
                 grad = p.grad.data
                 
-                # 权重衰减
                 if weight_decay != 0:
                     grad = grad.add(p.data, alpha=weight_decay)
                 
-                # 获取或初始化状态
                 state = self.state[p]
                 if len(state) == 0:
-                    # 初始化状态
-                    state['y'] = torch.zeros_like(p.data)
-                    # 初始化z_history
-                    state['z_history'] = deque([torch.zeros_like(p.data)] * N, maxlen=N)
-                    # [拯救 FOPI] 引入 Adam 灵魂：二阶动量收集器
+                    state['step'] = 0
+                    state['grad_history'] = deque(maxlen=N)
                     state['v'] = torch.zeros_like(p.data)
                 
-                # -----------------------
-                # 【带有限幅器和自适应提速的混合 FOPI-Adam】
-                # -----------------------
+                state['step'] += 1
                 
-                # 更新 z_{k+1} (分数阶积分池)
-                z_sum = torch.zeros_like(p.data)
-                z_history = state['z_history']
-                for j, z_coeff in enumerate(gammaI):
-                    if j < len(z_history):
-                        z_sum = z_sum.add(z_history[j], alpha=z_coeff)
+                grad_history = state['grad_history']
+                grad_history.appendleft(grad.clone())
                 
-                # [★核心：Anti-Windup 漏积分保护]
-                # 纯积分器如果无界积累会导致 Loss 在几轮后爆炸。给积分池增加 0.9 的漏衰减(Leaky factor)
-                # 这就像电容自放电，历史包袱永远处于安全的水位线以下！
-                z_new = z_sum.mul(0.9) + grad
-                z_history.appendleft(z_new.clone())
+                I_alpha = torch.zeros_like(p.data)
+                for j, w in enumerate(gammaI_norm):
+                    if j < len(grad_history):
+                        I_alpha.add_(grad_history[j], alpha=w)
                 
-                # 更新 y_{k+1} (FOPI 前进方向动力学信号计算)
-                y_old = state['y']
-                y_raw = (y_old - k_p * grad - k_i * z_new) / (1 + lambda_param)
-                state['y'] = y_raw  # 严谨保存原始状态
+                k = min(state['step'], N)
+                partial_weight_sum = sum(abs(w) for w in gammaI[:k]) + 1e-10
+                I_alpha.mul_(gammaI_sum / partial_weight_sum)
                 
-                # ====================================================================
-                # [★ 最终护航：标准 Adam 二阶方差自适应缩放]
-                # 上一版之所以依然震荡(Loss 60)，是因为我们粗暴地均规化了 y_raw，导致信噪比丢失！
-                # 标准的做法是：基于纯净梯度的自适应方差 (v)，对 FOPI 指挥的步伐 (y_raw) 进行过滤！
-                # 所有噪音梯度不再被盲目等幅放大，只有真实的特征梯度才能迈出稳定的步伐。
-                # ====================================================================
+                d_t = grad.mul(k_p).add(I_alpha, alpha=k_i)
+                
                 v = state['v']
                 beta2 = 0.999
                 v.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
                 
-                step = state.get('step', 0) + 1
-                state['step'] = step
-                bias_correction2 = 1 - beta2 ** step
-                denom = (torch.sqrt(v) / math.sqrt(bias_correction2)).add_(1e-8)
+                bias_correction2 = 1 - beta2 ** state['step']
+                denom = v.sqrt().div_(math.sqrt(bias_correction2)).add_(1e-8)
                 
-                # 严格对照 Adam：p_new = p_old + lr * (y_raw被FOPI处理好的下降方向) / 纯净梯度方差
-                p.data.addcdiv_(y_raw, denom, value=lr)
+                p.data.addcdiv_(d_t, denom, value=-lr)
 
         return loss
 
@@ -271,6 +244,10 @@ class TrainingManager:
         self.ltd_data = None      # 存储突触数据(LTD)
         self.synaptic_transformer = None  # 突触数据转换器
         self.enable_gradient_proxy = True  # 梯度代理开关（消融实验用）
+        self.proxy_warmup_epochs = 10     # 梯度代理预热epoch数（延长至10，给网络更多时间建立稳定发放）
+        self.current_epoch = 0            # 当前epoch
+        self.proxy_dead_count = 0         # 连续梯度虚弱计数
+        self.proxy_logged = False         # 是否已输出过代理日志
 
     def set_synaptic_data(self, synaptic_data, ltd_data=None, use_pca=False):  # 默认禁用PCA
         """
@@ -299,6 +276,11 @@ class TrainingManager:
             self.ltd_data = ltd_data.to(self.device)
         else:
             self.ltd_data = None
+        
+        # 重置梯度代理状态（新数据可能改变曲线特性）
+        self.device_curves_ready = False
+        self.proxy_logged = False
+        self.proxy_dead_count = 0
         
         # 如果模型使用突触数据，则初始化转换器
         if hasattr(self.model, 'use_synaptic_data') and self.model.use_synaptic_data:
@@ -383,18 +365,43 @@ class TrainingManager:
             
         return batch_data, batch_ltd
 
+    def _compute_updateability(self, curve, pulse):
+        n = len(curve)
+        if n < 3:
+            return np.ones(n)
+        
+        dg = np.zeros(n)
+        dg[0] = abs(curve[1] - curve[0]) / (pulse[1] - pulse[0])
+        dg[-1] = abs(curve[-1] - curve[-2]) / (pulse[-1] - pulse[-2])
+        for i in range(1, n - 1):
+            dg[i] = abs(curve[i+1] - curve[i-1]) / (pulse[i+1] - pulse[i-1])
+        
+        if n >= 7:
+            kernel = np.ones(5) / 5.0
+            dg = np.convolve(dg, kernel, mode='same')
+        
+        return dg
+
+    def _check_linearity(self, curve):
+        if len(curve) < 3:
+            return True
+        x = np.linspace(0, 1, len(curve))
+        fit = np.polyfit(x, curve, 1)
+        predicted = np.polyval(fit, x)
+        ss_res = np.sum((curve - predicted) ** 2)
+        ss_tot = np.sum((curve - np.mean(curve)) ** 2)
+        r_squared = 1.0 - ss_res / (ss_tot + 1e-10)
+        return r_squared > 0.98
+
     def prepare_device_curves(self):
-        """准备LTP/LTD曲线的插值函数用于梯度代理"""
         if self.synaptic_data is None:
             return
 
         try:
-            # 获取LTP曲线 (取平均)
             ltp_curve = self.synaptic_data.cpu().numpy()
             if len(ltp_curve.shape) > 1:
                 ltp_curve = np.mean(ltp_curve, axis=0)
             
-            # 获取LTD曲线
             if self.ltd_data is not None:
                 ltd_curve = self.ltd_data.cpu().numpy()
                 if len(ltd_curve.shape) > 1:
@@ -402,76 +409,137 @@ class TrainingManager:
             else:
                 ltd_curve = np.zeros_like(ltp_curve)
 
-            # 计算斜率 (dG/dt)
-            ltp_slope = np.gradient(ltp_curve)
-            ltd_slope = np.gradient(ltd_curve)
-
-            # 建立 G -> Slope 的映射
-            # 1. LTP: 排序G值以建立查找表
-            ltp_sort_idx = np.argsort(ltp_curve)
-            self.ltp_g_sorted = ltp_curve[ltp_sort_idx]
-            self.ltp_slope_sorted = ltp_slope[ltp_sort_idx]
+            n_ltp = len(ltp_curve)
+            n_ltd = len(ltd_curve)
             
-            # 2. LTD: 排序G值
-            ltd_sort_idx = np.argsort(ltd_curve)
-            self.ltd_g_sorted = ltd_curve[ltd_sort_idx]
-            self.ltd_slope_sorted = ltd_slope[ltd_sort_idx]
+            ltp_pulse = np.linspace(0, 1, n_ltp)
+            ltd_pulse = np.linspace(0, 1, n_ltd)
+            
+            self.ltp_is_linear = self._check_linearity(ltp_curve)
+            self.ltd_is_linear = self._check_linearity(ltd_curve)
+            
+            ltp_dg = self._compute_updateability(ltp_curve, ltp_pulse)
+            ltd_dg = self._compute_updateability(ltd_curve, ltd_pulse)
+            
+            ltp_dg_norm = ltp_dg / (np.max(ltp_dg) + 1e-10)
+            ltd_dg_norm = ltd_dg / (np.max(ltd_dg) + 1e-10)
+            
+            ltp_g_norm = ltp_curve / (np.max(np.abs(ltp_curve)) + 1e-10)
+            ltd_g_norm = ltd_curve / (np.max(np.abs(ltd_curve)) + 1e-10)
+            
+            ltp_sort_idx = np.argsort(ltp_g_norm)
+            self.ltp_g_sorted = ltp_g_norm[ltp_sort_idx]
+            self.ltp_up_sorted = ltp_dg_norm[ltp_sort_idx]
+            
+            ltd_sort_idx = np.argsort(ltd_g_norm)
+            self.ltd_g_sorted = ltd_g_norm[ltd_sort_idx]
+            self.ltd_up_sorted = ltd_dg_norm[ltd_sort_idx]
             
             self.device_curves_ready = True
-            print("已准备LTP/LTD曲线用于梯度代理")
+            linear_info = f"LTP={'线性' if self.ltp_is_linear else '非线性'}, LTD={'线性' if self.ltd_is_linear else '非线性'}"
+            print(f"已准备LTP/LTD曲线用于梯度代理 (LTP:{n_ltp}点, LTD:{n_ltd}点, {linear_info})")
             
         except Exception as e:
             print(f"准备器件曲线失败: {str(e)}")
             self.device_curves_ready = False
 
     def apply_device_constraints(self, model):
-        """应用器件约束到梯度（梯度代理机制）"""
         if not getattr(self, 'device_curves_ready', False):
             self.prepare_device_curves()
             if not getattr(self, 'device_curves_ready', False):
                 return
-
+        
+        ltp_is_linear = getattr(self, 'ltp_is_linear', True)
+        ltd_is_linear = getattr(self, 'ltd_is_linear', True)
+        
+        if ltp_is_linear and ltd_is_linear:
+            if not getattr(self, 'proxy_logged', False):
+                print("梯度代理: 两条曲线均为线性(>98%), 跳过代理")
+                self.proxy_logged = True
+            return
+        
+        warmup = self.proxy_warmup_epochs
+        epoch = getattr(self, 'current_epoch', 0)
+        if epoch < warmup:
+            proxy_strength = (epoch + 1) / warmup
+        else:
+            proxy_strength = 1.0
+        
+        mod_range = 0.1 * proxy_strength
+        mod_base = 1.0 - mod_range
+        
+        if epoch == 0 and not getattr(self, 'proxy_logged', False):
+            print(f"梯度代理: warmup={warmup}epochs, 最终最大抑制=10% (因子范围[0.90, 1.0])")
+            print(f"  当前epoch 0: 抑制={mod_range*100:.0f}% (因子范围[{mod_base:.2f}, 1.0])")
+            self.proxy_logged = True
+        elif epoch == warmup:
+            print(f"梯度代理: warmup完成, 进入全强度 (因子范围[{mod_base:.2f}, 1.0])")
+        
+        output_dim = getattr(model, 'output_dim', None)
+        weight_params = [(name, p) for name, p in model.named_parameters() if p.ndim >= 2]
+        output_weight_names = {name for name, p in weight_params if 'layers.' in name and name.endswith('.fc.weight')}
+        if output_weight_names:
+            last_layer_weight = sorted(output_weight_names)[-1]
+        else:
+            last_layer_weight = None
+        
+        all_grads_healthy = True
         for param in model.parameters():
             if param.grad is None:
                 continue
-                
-            # 仅对权重矩阵应用（忽略偏置等）
             if param.ndim < 2:
                 continue
+            grad_abs_mean = param.grad.abs().mean().item()
+            if grad_abs_mean < 1e-7:
+                all_grads_healthy = False
+        
+        if not all_grads_healthy:
+            self.proxy_dead_count += 1
+            if self.proxy_dead_count >= 3:
+                if epoch == 0:
+                    print(f"梯度代理: 检测到梯度过弱(连续{self.proxy_dead_count}次), 跳过本step")
+                return
+        else:
+            self.proxy_dead_count = 0
+        
+        for name, param in model.named_parameters():
+            if param.grad is None:
+                continue
+                
+            if param.ndim < 2:
+                continue
+            
+            if last_layer_weight and name == last_layer_weight:
+                continue
 
-            # 获取当前权重值
             w_flat = param.data.cpu().numpy().ravel()
             grad_flat = param.grad.data.cpu().numpy().ravel()
             
-            slope_factor = np.ones_like(w_flat)
+            w_abs_max = np.max(np.abs(w_flat))
+            if w_abs_max < 1e-8:
+                continue
             
-            # LTP mask (grad < 0，即需要增加权重)
-            # 映射规则：如果当前权重是w，沿LTP曲线增加的容易程度由LTP斜率决定
+            w_norm = np.abs(w_flat) / w_abs_max
+            
+            update_factor = np.ones_like(w_flat)
+            
             ltp_mask = grad_flat < 0
             if np.any(ltp_mask):
-                # 使用np.interp查找当前权重对应的斜率
-                slope = np.interp(w_flat[ltp_mask], self.ltp_g_sorted, self.ltp_slope_sorted)
-                slope_factor[ltp_mask] = np.abs(slope)
+                up = np.interp(w_norm[ltp_mask], self.ltp_g_sorted, self.ltp_up_sorted)
+                update_factor[ltp_mask] = up
                 
-            # LTD mask (grad > 0，即需要减少权重)
             ltd_mask = grad_flat > 0
             if np.any(ltd_mask):
-                slope = np.interp(w_flat[ltd_mask], self.ltd_g_sorted, self.ltd_slope_sorted)
-                slope_factor[ltd_mask] = np.abs(slope)
+                up = np.interp(w_norm[ltd_mask], self.ltd_g_sorted, self.ltd_up_sorted)
+                update_factor[ltd_mask] = up
             
-            # 归一化斜率因子以保持梯度的总体尺度，防止过小
-            # 我们希望保留相对形状，但不要让梯度消失
-            if np.max(slope_factor) > 1e-6:
-                slope_factor = slope_factor / np.max(slope_factor)
+            update_factor = update_factor * mod_range + mod_base
             
-            # 增加一个基数，防止完全梯度消失
-            slope_factor = slope_factor * 0.9 + 0.1
-            
-            # 应用调节因子
-            factor_tensor = torch.from_numpy(slope_factor.reshape(param.grad.shape)).to(param.device).float()
+            factor_tensor = torch.from_numpy(update_factor.reshape(param.grad.shape)).to(param.device).float()
             param.grad.data *= factor_tensor
 
     def train_epoch(self, train_loader, criterion, optimizer, device, epoch, num_epochs, log_callback=None, max_batches=None):
+        self.current_epoch = epoch
         self.model.train()
         running_loss = 0.0
         correct = 0
@@ -614,19 +682,19 @@ class TrainingManager:
         
         log("正在初始化优化器...")
         if 'FOPI' in config.optimizer_type:
-            log("正在使用 FOPI 分数阶优化器对抗核心物理畸变和死区...")
+            log("正在使用 FOPI-Adam 分数阶优化器(PIDAO连续形式)...")
             
             self.optimizer = FOPIOptimizer(
                 self.model.parameters(), 
-                lr=config.learning_rate,  # 因为已经内置了RMS自适应抗微弱梯度，恢复普通学习率
+                lr=config.learning_rate,
                 lambda_param=1, 
                 weight_decay=1e-4,
-                k_p=1.0,               
-                k_i=1.0,               # 恢复较为强劲的积分项动量 1.0 (因为自适应均方根做了全盘限流，可以提速了)
+                k_p=0.1,
+                k_i=0.9,
                 alpha=0.9, 
-                N=5                    # 按照原版用户发来的 N=5
+                N=10
             )
-            log(f"-> 【FOPI-RMS 自适应进化版启动】融合 Adam 视力的强力分数阶动力学， lr={config.learning_rate}, k_p=1.0, k_i=1.0, N=5")
+            log(f"-> FOPI-Adam: lr={config.learning_rate}, k_p=0.1, k_i=0.9, alpha=0.9, N=10")
         else:
             self.optimizer = optim.Adam(self.model.parameters(), lr=config.learning_rate, weight_decay=1e-4)
             
@@ -650,6 +718,7 @@ class TrainingManager:
         for epoch in range(config.epochs):
             if should_stop():
                 return None
+            self.current_epoch = epoch
             self.model.train()
             total_loss = 0
             correct = 0
@@ -673,17 +742,19 @@ class TrainingManager:
                 self.optimizer.zero_grad()
 
                 # 获取当前batch的突触数据（自动处理维度）
-                batch_synaptic_data = self.get_batch_synaptic_data(inputs.size(0))
+                batch_ltp_data, batch_ltd_data = self.get_batch_synaptic_data(inputs.size(0))
 
                 # 前向传播
-                outputs = self.model(inputs, batch_synaptic_data)
+                outputs = self.model(inputs, batch_ltp_data, batch_ltd_data)
                 loss = criterion(outputs, labels)
                 
                 # 反向传播和优化
                 loss.backward()
                 
-                # 【防爆仓防卡死】强制进行梯度裁剪 (Gradient Clipping)，截断 FOPI 可能由于无限追溯导致的梯度爆炸/NaN
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                # 梯度裁剪：仅在 FOPI 模式下启用（防止分数阶积分的无界累积导致爆炸）
+                # 注意：不能对 Adam 开启，会严重限制 Adam 的梯度表达能力导致精度下降！
+                if 'FOPI' in config.optimizer_type:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 
                 # 应用梯度代理（如果已加载突触数据且开关开启）
                 if self.enable_gradient_proxy and hasattr(self, 'synaptic_data') and self.synaptic_data is not None:
